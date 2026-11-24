@@ -8,8 +8,8 @@ import random
 
 W, H = 1280, 720
 GROUND = 652
-GOAL_D = 105          # kale derinligi (px)
-GOAL_H = 215          # kale agzi yuksekligi
+GOAL_D = 92           # kale derinligi (px)
+GOAL_H = 188          # kale agzi yuksekligi
 ROOF_T = 12           # ust direk/cati kalinligi
 GOAL_TOP = GROUND - GOAL_H
 

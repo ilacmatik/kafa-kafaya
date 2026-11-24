@@ -10,11 +10,26 @@ import socket
 import sys
 import time
 
-import pygame
+# Windows ekran olcegi (%125/%150) yuzunden goruntu bulaniklasmasin
+if sys.platform == "win32":
+    os.environ.setdefault("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+# tam ekranda buyutme yumusak (pikselli degil) olsun
+os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "1")
+os.environ.setdefault("SDL_HINT_RENDER_SCALE_QUALITY", "1")
 
-import fx
-import net
-import sim
+import pygame  # noqa: E402
+
+import fx  # noqa: E402
+import net  # noqa: E402
+import sim  # noqa: E402
 
 W, H = sim.W, sim.H
 FPS = 60
@@ -1968,9 +1983,13 @@ class App:
         pygame.init()
         flags = pygame.SCALED | pygame.RESIZABLE
         try:
-            self.screen = pygame.display.set_mode((W, H), flags)
+            # varsayilan: tam ekran (F11 ile pencereye gecilir)
+            self.screen = pygame.display.set_mode((W, H), flags | pygame.FULLSCREEN)
         except pygame.error:
-            self.screen = pygame.display.set_mode((W, H))
+            try:
+                self.screen = pygame.display.set_mode((W, H), flags)
+            except pygame.error:
+                self.screen = pygame.display.set_mode((W, H))
         pygame.display.set_caption("Kafa Kafaya Futbol")
         try:
             pygame.display.set_icon(pygame.image.load(res("assets", "ball.png")))
