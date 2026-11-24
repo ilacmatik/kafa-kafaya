@@ -359,6 +359,7 @@ class Assets:
         self.menu_bg = mb
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
+        self.big_celeb = []
         self.kick_anchor = []
         self.poses = []
         for i in range(6):
@@ -375,15 +376,19 @@ class Assets:
             self.kick_anchor.append(0.40)
             poses = {}
             if os.path.exists(res("assets", "p%d_run1.png" % i)):
-                raw = {k: L("p%d_%s.png" % (i, k)).convert_alpha() for k in ("run1", "run2", "jump", "celeb")}
-                f2 = iw.get_height() / raw["run1"].get_height()
-                for k, im in raw.items():
+                for k in ("run1", "run2", "jump", "celeb"):
+                    im = L("p%d_%s.png" % (i, k)).convert_alpha()
                     poses[k] = pygame.transform.smoothscale(
-                        im, (round(im.get_width() * f2), round(im.get_height() * f2)))
+                        im, (round(im.get_width() * f), round(im.get_height() * f)))
                 poses["jump_ice"] = self._ice(poses["jump"])
             self.poses.append(poses)
             bh = 215
             self.big.append(pygame.transform.smoothscale(idle, (round(idle.get_width() * bh / idle.get_height()), bh)))
+            fb = bh / idle.get_height()
+            cp = res("assets", "p%d_celeb.png" % i)
+            cimg = L("p%d_celeb.png" % i).convert_alpha() if os.path.exists(cp) else idle
+            self.big_celeb.append(pygame.transform.smoothscale(
+                cimg, (round(cimg.get_width() * fb), round(cimg.get_height() * fb))))
             head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.45))).copy()
             ph = 58
             self.portrait.append(pygame.transform.smoothscale(head, (round(head.get_width() * ph / head.get_height()), ph)))
@@ -967,6 +972,8 @@ class SelectScene(Scene, OnlineMixin):
             else:
                 pygame.draw.rect(s, (70, 80, 120), rr, 2, border_radius=18)
             img = A.big[i]
+            if (sel0 and self.ready[0]) or (sel1 and self.ready[1]):
+                img = A.big_celeb[i]
             bob = math.sin(self.t * 4 + i) * 3 if hot else 0
             s.blit(img, img.get_rect(midbottom=(r.centerx, r.y + 238 + bob)))
             draw_text(s, sim.DISPLAY_NAMES[i], 26, (r.centerx, r.y + 258), WHITE, outline=3)
@@ -1923,7 +1930,7 @@ class MatchScene(Scene, OnlineMixin):
             sc = snap["sc"]
             A = self.app.assets
             for i in (0, 1):
-                img = A.big[snap["p"][i][9]]
+                img = (A.big_celeb if win in (i,) else A.big)[snap["p"][i][9]]
                 if i == 1:
                     img = A.flipped(img)
                 img = pygame.transform.smoothscale(img, (int(img.get_width() * 0.62), int(img.get_height() * 0.62)))
