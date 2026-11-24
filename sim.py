@@ -9,7 +9,7 @@ import random
 W, H = 1280, 720
 GROUND = 652
 GOAL_D = 105          # kale derinligi (px)
-GOAL_H = 235          # kale agzi yuksekligi
+GOAL_H = 215          # kale agzi yuksekligi
 ROOF_T = 12           # ust direk/cati kalinligi
 GOAL_TOP = GROUND - GOAL_H
 
@@ -76,6 +76,7 @@ class Player:
         self.armed = 0.0
         self.run_t = 0.0
         self.touch_cd = 0.0
+        self.move = 0
 
     # carpisma daireleri
     def head(self):
@@ -102,6 +103,7 @@ class Ball:
         self.vx = random.choice((-1, 1)) * random.uniform(20, 60)
         self.vy = 0.0
         self.ang = 0.0
+        self.spin = 0.0        # + ust falso (yere dusunce ileri kacar), - ters falso
         self.mode = 0          # 0 normal, 1 ates, 2 buz
         self.mode_t = 0.0
         self.owner = -1        # super sutu atan
@@ -142,12 +144,8 @@ class World:
         target = move * spd
         # hafif ivmelenme
         p.vx += (target - p.vx) * (0.35 if p.on_ground else 0.18)
-        if move:
-            p.face = move
-        else:
-            # durunca rakip kaleye don
-            if p.on_ground and p.kick_t <= 0:
-                p.face = p.dir
+        p.move = move
+        p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         if jump and p.on_ground:
             p.vy = -p.stats["jump"] * (1.28 if p.jump_t > 0 else 1.0)
             p.on_ground = False
@@ -237,6 +235,37 @@ class World:
             if abs(vn) > 200:
                 self.events.append("post")
         return True
+
+    def _kick(self, p, rel):
+        """Temas noktasina ve harekete gore sut."""
+        b = self.ball
+        pw = p.stats["kick"]
+        q = 1.0 - 0.45 * clamp(rel, 0.0, 1.0)      # tam temas = guclu sut
+        h = p.y - b.y                               # topun ayak seviyesinden yuksekligi
+        if h < 34:
+            ang = 40.0      # ayagin alti: asirtma
+        elif h < 72:
+            ang = 24.0      # ayak ustu: sert
+        else:
+            ang = 10.0      # havadaki top: vole
+        if (b.x - p.x) * p.dir > 58:
+            ang -= 6        # uzaktan ayak ucu: daha duz
+        spin = 0.15
+        mv = p.move * p.dir
+        if mv < 0:
+            ang, q, spin = 58.0, q * 0.85, -0.9          # geri giderken: yuksek asirtma, ters falso
+        elif mv > 0 and abs(p.vx) > 150:
+            ang, q, spin = max(5.0, ang - 13), q * 1.08, 1.0   # kosarak: sert, ust falso
+        if not p.on_ground:
+            ang -= 5
+        speed = 880 * pw * q
+        r = math.radians(ang)
+        b.vx = p.dir * speed * math.cos(r) + p.vx * 0.25
+        b.vy = -speed * math.sin(r) + (p.vy * 0.2 if p.vy < 0 else 0)
+        b.spin = spin
+        b.mode = 0
+        self.events.append("kick")
+        self._touch(p)
 
     def _goal_rects(self):
         return [
@@ -339,11 +368,12 @@ class World:
             if b.mode_t <= 0:
                 b.mode = 0
         else:
-            b.vy += BALL_G * dt
+            b.vy += BALL_G * dt + b.spin * 430 * dt
             b.vx *= (1 - 0.12 * dt)
+            b.spin *= (1 - 0.6 * dt)
         b.x += b.vx * dt
         b.y += b.vy * dt
-        b.ang += b.vx * dt / BALL_R
+        b.ang += (b.vx / BALL_R + b.spin * 12 * (1 if b.vx >= 0 else -1)) * dt
 
         # zemin
         if b.y + BALL_R > GROUND:
@@ -351,6 +381,9 @@ class World:
             if b.vy > 0:
                 if b.vy > 160:
                     self.events.append("bounce")
+                    if b.spin:
+                        b.vx += (1 if b.vx >= 0 else -1) * b.spin * 160
+                        b.spin *= 0.4
                 b.vy = -b.vy * 0.68
                 if abs(b.vy) < 60:
                     b.vy = 0
@@ -426,23 +459,15 @@ class World:
             # sut
             if p.kick_t > 0 and not p.kick_hit and not p.disabled:
                 fx, fy, fr = p.foot()
-                if math.hypot(b.x - fx, b.y - fy) < fr + BALL_R:
+                dist = math.hypot(b.x - fx, b.y - fy)
+                if dist < fr + BALL_R:
                     p.kick_hit = True
-                    pw = p.stats["kick"]
-                    high = b.y < p.y - 75
-                    if high:
-                        b.vx = p.face * 760 * pw + p.vx * 0.25
-                        b.vy = -240 * pw
-                    else:
-                        b.vx = p.face * 620 * pw + p.vx * 0.25
-                        b.vy = -560 * pw
-                    b.mode = 0
-                    self.events.append("kick")
-                    self._touch(p)
+                    self._kick(p, dist / (fr + BALL_R))
                     continue
             hx, hy, hr = p.head()
             if self._circle_vs_ball(hx, hy, hr, p.vx, p.vy, 0.75):
                 touched = True
+                b.spin *= 0.3
                 if p.vy < -50:
                     b.vy += p.vy * 0.35
                 if abs(b.vx) + abs(b.vy) > 450:

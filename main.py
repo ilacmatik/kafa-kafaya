@@ -593,11 +593,13 @@ class HelpScene(Scene):
                 draw_text(s, a, 24, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
                 draw_text(s, b, 24, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
                 y += 38
-        draw_text(s, "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER", 20,
-                  (W // 2, y + 18), (255, 230, 150), outline=2, title=False)
-        draw_text(s, "Süper şut rakibe gelirken tam zamanında ŞUT tuşuna basarak karşılanabilir!", 20,
-                  (W // 2, y + 48), (255, 230, 150), outline=2, title=False)
-        draw_text(s, "Geri dönmek için bir tuşa bas", 22, (W // 2, H - 90), (200, 210, 230), outline=2, title=False)
+        tips = ["Koşarak şut: alçak ve sert   ·   Geri giderken şut: yüksek aşırtma",
+                "Top ayağın altındaysa havalanır, havadaysa vole olur",
+                "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER",
+                "Süper şut gelirken tam zamanında ŞUT tuşuna basarsan kurtarırsın!"]
+        for k, tip in enumerate(tips):
+            draw_text(s, tip, 19, (W // 2, y + 10 + k * 27), (255, 230, 150), outline=2, title=False)
+        draw_text(s, "Geri dönmek için bir tuşa bas", 20, (W // 2, H - 80), (200, 210, 230), outline=2, title=False)
 
 
 class MessageScene(Scene):

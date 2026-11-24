@@ -37,6 +37,8 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   1. oyuncu: A/D, W zıpla, BOŞLUK şut, S süper
   2. oyuncu: oklar, Yukarı zıpla, ENTER şut, Aşağı süper
 
+  - Koşarak şut: alçak ve sert, falsolu. Geri giderken şut: yüksek aşırtma.
+  - Top ayağın altındaysa havalanır, dizdeyse sert gider, havadaysa vole olur.
   - Topu havadaki güç simgelerine çarptır: HIZ, SÜPER ZIPLAMA,
     BUZ KALKAN (kaleni korur), DONDURMA (rakibi dondurur), ALTIN (süper bar dolar).
   - Süper bar dolunca S'ye bas, sonraki vuruşun ATEŞ ya da BUZ şutu olur.
