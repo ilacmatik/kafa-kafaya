@@ -29,7 +29,10 @@ run(app, main.SelectScene(app, "bot"), 10)
 run(app, main.SelectScene(app, "local2"), 10)
 random.seed(1)
 m = main.MatchScene(app, "bot", [0, 5], 60)
+import time
+t0 = time.perf_counter()
 run(app, m, 60 * 20, keys=True)
+print("ortalama kare suresi: %.1f ms" % ((time.perf_counter() - t0) / (60 * 20) * 1000))
 w = m.world
 w.players[1].frozen = 2
 w.players[0].armed = 3

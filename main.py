@@ -12,6 +12,7 @@ import time
 
 import pygame
 
+import fx
 import net
 import sim
 
@@ -125,7 +126,7 @@ class Sound:
             self.freq, self.ch = freq, ch
             if abs(size) != 16:
                 return
-            pygame.mixer.set_num_channels(16)
+            pygame.mixer.set_num_channels(24)
             self._build()
             self.ok = True
         except Exception:
@@ -133,107 +134,195 @@ class Sound:
 
     def _mk(self, samples, vol=0.6):
         import array
+        peak = max(1e-6, max(abs(v) for v in samples))
+        g = vol / peak
         a = array.array("h")
+        ch = self.ch
         for v in samples:
-            v = int(max(-1.0, min(1.0, v * vol)) * 32000)
-            for _ in range(self.ch):
+            v = int(max(-1.0, min(1.0, v * g)) * 32000)
+            a.append(v)
+            if ch == 2:
                 a.append(v)
         return pygame.mixer.Sound(buffer=a.tobytes())
 
     def _build(self):
         sr = self.freq
         rnd = random.Random(7)
+        sin = math.sin
+        tau = math.tau
 
         def n(sec):
             return int(sr * sec)
 
-        def thump(f0, f1, dur, noise=0.3):
-            out, ph = [], 0.0
-            N = n(dur)
-            for i in range(N):
-                t = i / N
-                f = f0 + (f1 - f0) * t
-                ph += 2 * math.pi * f / sr
-                env = (1 - t) ** 3
-                out.append((math.sin(ph) + noise * (rnd.random() * 2 - 1) * (1 - t) ** 8) * env)
+        def env_ad(N, att, dec_pow=2.0):
+            a = max(1, int(N * att))
+            return [(i / a) if i < a else (1 - (i - a) / max(1, N - a)) ** dec_pow for i in range(N)]
+
+        def noise(dur, lp=0.2, hp=0.0):
+            out, y, z = [], 0.0, 0.0
+            for _ in range(n(dur)):
+                x = rnd.random() * 2 - 1
+                y += lp * (x - y)
+                if hp:
+                    z += hp * (y - z)
+                    out.append(y - z)
+                else:
+                    out.append(y)
             return out
 
-        def tones(freqs, dur, decay=4.0):
-            N = n(dur)
-            return [sum(math.sin(2 * math.pi * f * i / sr) for f in freqs) / len(freqs) * math.exp(-decay * i / sr)
-                    for i in range(N)]
-
-        def noise(dur, lp=0.1, env=None):
-            out, y = [], 0.0
-            N = n(dur)
-            for i in range(N):
-                y += lp * ((rnd.random() * 2 - 1) - y)
-                t = i / N
-                e = env(t) if env else 1.0
-                out.append(y * e)
-            m = max(1e-6, max(abs(v) for v in out))
-            return [v / m for v in out]
-
-        def whistle(dur):
-            N = n(dur)
-            out, ph = [], 0.0
-            for i in range(N):
-                t = i / sr
-                f = 2900 + 120 * math.sin(2 * math.pi * 32 * t)
-                ph += 2 * math.pi * f / sr
-                e = min(1, t * 40) * min(1, (dur - t) * 20)
-                out.append(math.sin(ph) * e * 0.6 + (rnd.random() - 0.5) * 0.15 * e)
-            return out
-
-        def sweep(f0, f1, dur):
-            N = n(dur)
-            out, ph = [], 0.0
-            for i in range(N):
-                t = i / N
-                ph += 2 * math.pi * (f0 + (f1 - f0) * t) / sr
-                out.append(math.sin(ph) * (1 - t) * min(1, t * 30))
-            return out
+        def mul(a, b):
+            return [x * y for x, y in zip(a, b)]
 
         def mix(*parts):
-            L = max(len(p) for p in parts)
-            return [sum(p[i] for p in parts if i < len(p)) for i in range(L)]
+            L = max(len(p) for p, _ in parts)
+            out = [0.0] * L
+            for p, g in parts:
+                for i, v in enumerate(p):
+                    out[i] += v * g
+            return out
+
+        def pad(sig, before):
+            return [0.0] * n(before) + sig
+
+        def thump(f0, f1, dur, click=0.4, slap=0.0):
+            N = n(dur)
+            out, ph = [], 0.0
+            for i in range(N):
+                t = i / N
+                f = f1 + (f0 - f1) * (1 - t) ** 3
+                ph += tau * f / sr
+                e = (1 - t) ** 2.5
+                v = sin(ph) * e
+                if i < n(0.012):
+                    v += click * (rnd.random() * 2 - 1) * (1 - i / n(0.012))
+                out.append(v)
+            if slap:
+                sl = noise(0.04, 0.9, 0.5)
+                sl = mul(sl, [(1 - i / len(sl)) ** 3 for i in range(len(sl))])
+                out = mix((out, 1), (sl, slap))
+            return out
+
+        def bell(freqs, dur, decay):
+            N = n(dur)
+            return [sum(sin(tau * f * i / sr) * math.exp(-decay * k * i / sr) for k, f in enumerate(freqs, 1))
+                    for i in range(N)]
+
+        def whistle(dur):
+            out, ph = [], 0.0
+            N = n(dur)
+            for i in range(N):
+                t = i / sr
+                f = 2700 + 160 * sin(tau * 28 * t)
+                ph += tau * f / sr
+                e = min(1, t * 60) * min(1, (dur - t) * 25)
+                out.append((sin(ph) + 0.25 * sin(2 * ph)) * e + (rnd.random() - 0.5) * 0.2 * e)
+            return out
+
+        def voices(dur, count, f_lo, f_hi, glide, harm, att=0.15, rel=0.5, vib=5.0):
+            N = n(dur)
+            out = [0.0] * N
+            for _ in range(count):
+                f0 = rnd.uniform(f_lo, f_hi)
+                ph = rnd.uniform(0, tau)
+                vr = rnd.uniform(4, 7)
+                st = rnd.uniform(0, 0.12)
+                for i in range(N):
+                    t = i / sr
+                    if t < st:
+                        continue
+                    u = i / N
+                    f = f0 * (1 + glide * u) * (1 + 0.012 * sin(tau * vr * t))
+                    ph += tau * f / sr
+                    v = sin(ph) + harm[0] * sin(2 * ph) + harm[1] * sin(3 * ph) + harm[2] * sin(4 * ph)
+                    e = min(1, (t - st) / att) * min(1, (dur - t) / rel)
+                    out[i] += v * e
+            return out
+
+        def claps(dur, times):
+            N = n(dur)
+            out = [0.0] * N
+            for t0 in times:
+                for _ in range(6):
+                    s0 = int((t0 + rnd.uniform(-0.025, 0.025)) * sr)
+                    L = n(0.03)
+                    for k in range(L):
+                        if 0 <= s0 + k < N:
+                            out[s0 + k] += (rnd.random() * 2 - 1) * (1 - k / L) ** 4
+            return out
 
         s = self.snd
-        s["kick"] = self._mk(thump(150, 55, 0.16, 0.6), 0.9)
-        s["head"] = self._mk(thump(260, 130, 0.11, 0.3), 0.7)
-        s["bounce"] = self._mk(thump(110, 70, 0.09, 0.2), 0.45)
-        s["post"] = self._mk(tones([880, 1320, 2093], 0.45, 7), 0.5)
-        s["whistle"] = self._mk(whistle(0.45), 0.45)
-        s["end"] = self._mk(whistle(0.25) + [0] * n(0.08) + whistle(0.25) + [0] * n(0.08) + whistle(0.7), 0.45)
-        crowd = noise(2.2, 0.08, lambda t: min(1, t * 6) * (1 - t) ** 1.2)
-        horn = [v * 0.5 for v in tones([233, 293, 349], 1.2, 1.2)]
-        s["goal"] = self._mk(mix(crowd, horn), 0.75)
-        s["super_fire"] = self._mk(mix(noise(0.6, 0.35, lambda t: (1 - t) ** 2), sweep(200, 900, 0.5)), 0.6)
-        s["super_ice"] = self._mk(mix(tones([1568, 2093, 2637], 0.6, 5), sweep(1200, 400, 0.4)), 0.5)
-        s["freeze"] = self._mk(noise(0.35, 0.9, lambda t: (1 - t) ** 3), 0.4)
-        s["fire_hit"] = self._mk(mix(thump(90, 40, 0.3, 0.9), noise(0.3, 0.5, lambda t: (1 - t) ** 2)), 0.8)
-        s["pu"] = self._mk(sweep(500, 500, 0.07) + sweep(750, 750, 0.07) + sweep(1000, 1000, 0.12), 0.4)
-        s["pu_spawn"] = self._mk(tones([1318, 1760], 0.25, 9), 0.3)
-        s["jump"] = self._mk(sweep(300, 520, 0.09), 0.18)
-        s["swing"] = self._mk(noise(0.12, 0.25, lambda t: math.sin(t * math.pi)), 0.18)
-        s["shield"] = self._mk(tones([660, 990], 0.3, 8), 0.45)
-        s["block"] = self._mk(thump(200, 80, 0.2, 0.8), 0.8)
-        s["armed"] = self._mk(sweep(300, 1200, 0.3), 0.35)
-        s["click"] = self._mk(sweep(900, 700, 0.05), 0.3)
-        s["golden"] = self._mk(tones([523, 659, 784, 1046], 0.9, 2), 0.5)
-        amb = noise(4.0, 0.05)
-        fade = n(0.3)
-        amb = [v * min(1, i / fade, (len(amb) - i) / fade) for i, v in enumerate(amb)]
-        s["crowd"] = self._mk(amb, 0.10)
+        # top sesleri
+        s["kick"] = self._mk(thump(190, 52, 0.22, 0.7, 0.6), 0.95)
+        s["head"] = self._mk(thump(320, 140, 0.13, 0.3, 0.35), 0.75)
+        s["bounce"] = self._mk(thump(140, 70, 0.11, 0.2, 0.15), 0.45)
+        s["land"] = self._mk(thump(90, 50, 0.08, 0.3), 0.25)
+        s["post"] = self._mk(mix((bell([523, 1415, 2560, 3810], 0.9, 3.2), 1), (thump(240, 120, 0.1, 0.8), 0.6)), 0.6)
+        s["swing"] = self._mk(mul(noise(0.16, 0.35, 0.1), [sin(math.pi * i / n(0.16)) for i in range(n(0.16))]), 0.22)
+        s["jump"] = self._mk(mul(noise(0.12, 0.25, 0.05), env_ad(n(0.12), 0.3)), 0.18)
+        # hakem
+        s["whistle"] = self._mk(whistle(0.5), 0.45)
+        s["end"] = self._mk(whistle(0.28) + [0] * n(0.1) + whistle(0.28) + [0] * n(0.1) + whistle(0.9), 0.45)
+        s["beep"] = self._mk(mul(bell([880], 0.18, 6), env_ad(n(0.18), 0.02)), 0.35)
+        s["tick"] = self._mk(thump(1800, 1500, 0.04, 0.2), 0.25)
+        # tribun
+        roar_d = 3.6
+        roar = mix((noise(roar_d, 0.12, 0.004), 1.0), (voices(roar_d, 14, 260, 520, 0.08, (0.45, 0.3, 0.15)), 0.12),
+                   (claps(roar_d, [0.6 + k * 0.14 for k in range(18)]), 0.35))
+        Nr = len(roar)
+        roar = mul(roar, [min(1, i / n(0.35)) * (1 - i / Nr) ** 0.9 for i in range(Nr)])
+        horn = mul(bell([233, 294, 349, 466], 1.3, 0.6), env_ad(n(1.3), 0.05, 1.2))
+        s["goal"] = self._mk(mix((roar, 1), (pad(horn, 0.15), 0.35)), 0.9)
+        ooh = mix((voices(1.4, 12, 150, 260, -0.22, (0.25, 0.05, 0.0), 0.12, 0.6), 1),
+                  (noise(1.4, 0.06), 0.4))
+        s["ooh"] = self._mk(mul(ooh, env_ad(len(ooh), 0.1, 1.3)), 0.55)
+        cheer = mix((voices(1.5, 12, 300, 560, 0.18, (0.5, 0.35, 0.2), 0.08, 0.7), 1), (noise(1.5, 0.15), 0.7))
+        s["cheer"] = self._mk(mul(cheer, env_ad(len(cheer), 0.06, 1.5)), 0.5)
+        amb_d = 6.0
+        amb = mix((noise(amb_d, 0.05, 0.002), 1.0), (noise(amb_d, 0.3, 0.2), 0.25),
+                  (claps(amb_d, [1.0, 1.25, 1.5, 1.62, 1.75, 4.0, 4.25, 4.5, 4.62, 4.75]), 0.18))
+        Na = len(amb)
+        lfo = [0.8 + 0.2 * sin(tau * i / Na * 3) for i in range(Na)]
+        fade = n(0.25)
+        amb = [v * lfo[i] * min(1, i / fade, (Na - i) / fade) for i, v in enumerate(amb)]
+        s["crowd"] = self._mk(amb, 0.16)
+        # gucler
+        whoosh = mul(noise(0.7, 0.45, 0.05), env_ad(n(0.7), 0.15, 1.5))
+        crackle = [((rnd.random() * 2 - 1) if rnd.random() < 0.02 else 0) for _ in range(n(0.7))]
+        s["super_fire"] = self._mk(mix((whoosh, 1), (thump(120, 40, 0.5, 0.9), 0.8), (crackle, 0.8)), 0.75)
+        s["super_ice"] = self._mk(mix((bell([1568, 2093, 2637, 3136], 0.8, 2.5), 0.5),
+                                      (mul(noise(0.6, 0.6, 0.4), env_ad(n(0.6), 0.05, 2)), 0.6)), 0.6)
+        s["freeze"] = self._mk(mix((mul(noise(0.5, 0.9, 0.6), env_ad(n(0.5), 0.01, 3)), 1),
+                                   (bell([2400, 3300], 0.5, 6), 0.4)), 0.5)
+        s["shatter"] = self._mk(mix((mul(noise(0.45, 0.95, 0.7), env_ad(n(0.45), 0.005, 4)), 1),
+                                    (bell([2900, 3700, 4600, 5300], 0.45, 7), 0.5)), 0.55)
+        s["fire_hit"] = self._mk(mix((thump(110, 38, 0.45, 1.0, 0.8), 1), (whoosh, 0.6), (crackle, 0.7)), 0.9)
+        s["pu"] = self._mk(sum([mul(bell([f], 0.12, 8), [1] * n(0.12)) for f in (660, 880, 1100, 1320)], []), 0.45)
+        s["pu_spawn"] = self._mk(mul(bell([1318, 1760, 2637], 0.5, 5), env_ad(n(0.5), 0.02)), 0.3)
+        s["shield"] = self._mk(mix((bell([660, 990, 1320], 0.45, 6), 1), (thump(200, 100, 0.1, 0.5), 0.6)), 0.5)
+        s["block"] = self._mk(thump(230, 70, 0.28, 1.0, 0.8), 0.9)
+        rise = []
+        ph = 0.0
+        for i in range(n(0.4)):
+            u = i / n(0.4)
+            ph += tau * (300 + 900 * u * u) / sr
+            rise.append((sin(ph) + 0.4 * sin(2 * ph)) * min(1, u * 8) * (1 - u) ** 0.5)
+        s["armed"] = self._mk(rise, 0.35)
+        s["click"] = self._mk(thump(1200, 900, 0.035, 0.1), 0.3)
+        fan = []
+        for k, f in enumerate((523, 659, 784, 1046)):
+            fan += mul(bell([f, f * 2], 0.16 if k < 3 else 0.6, 3), [1] * n(0.16 if k < 3 else 0.6))
+        s["golden"] = self._mk(fan, 0.5)
 
-    def play(self, name, gap=0.05):
+    def play(self, name, gap=0.05, vol=1.0):
         if not self.ok or self.muted or name not in self.snd:
             return
         now = time.time()
         if now - self.last.get(name, 0) < gap:
             return
         self.last[name] = now
-        self.snd[name].play()
+        ch = self.snd[name].play()
+        if ch is not None and vol != 1.0:
+            ch.set_volume(vol)
 
     def ambience(self, on):
         if not self.ok:
@@ -244,16 +333,25 @@ class Sound:
 
     def toggle(self):
         self.muted = not self.muted
-        if self.ok:
-            if self.muted:
-                pygame.mixer.stop()
+        if self.ok and self.muted:
+            pygame.mixer.stop()
 
 
 # ====================================================================== gorseller
 class Assets:
     def __init__(self):
         L = lambda f: pygame.image.load(res("assets", f))
-        self.stadium = L("stadium.jpg").convert()
+        self.stadium = L("stadium_clean.jpg").convert()
+        self.vignette = fx.make_vignette(W, H)
+        GD, GH = sim.GOAL_D, sim.GROUND - sim.GOAL_TOP
+        self.net_shade = pygame.Surface((GD, GH), pygame.SRCALPHA)
+        for x in range(GD):
+            pygame.draw.line(self.net_shade, (20, 30, 40, 60 + int(50 * abs(x - GD / 2) / GD)), (x, 0), (x, GH))
+        self.net_lines = pygame.Surface((GD, GH), pygame.SRCALPHA)
+        for x in range(0, GD + 1, 14):
+            pygame.draw.line(self.net_lines, (240, 240, 245, 170), (x, 0), (x, GH), 2)
+        for y in range(0, GH, 14):
+            pygame.draw.line(self.net_lines, (240, 240, 245, 170), (0, y), (GD, y), 2)
         mb = L("menu_bg.jpg").convert()
         dark = pygame.Surface((W, H), pygame.SRCALPHA)
         dark.fill((10, 15, 40, 120))
@@ -262,6 +360,7 @@ class Assets:
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
         self.kick_anchor = []
+        self.poses = []
         for i in range(6):
             idle = L("p%d_idle.png" % i).convert_alpha()
             kick = L("p%d_kick.png" % i).convert_alpha()
@@ -274,6 +373,15 @@ class Assets:
             self.idle_ice.append(self._ice(iw))
             self.kick_ice.append(self._ice(kw))
             self.kick_anchor.append(0.40)
+            poses = {}
+            if os.path.exists(res("assets", "p%d_run1.png" % i)):
+                raw = {k: L("p%d_%s.png" % (i, k)).convert_alpha() for k in ("run1", "run2", "jump", "celeb")}
+                f2 = iw.get_height() / raw["run1"].get_height()
+                for k, im in raw.items():
+                    poses[k] = pygame.transform.smoothscale(
+                        im, (round(im.get_width() * f2), round(im.get_height() * f2)))
+                poses["jump_ice"] = self._ice(poses["jump"])
+            self.poses.append(poses)
             bh = 215
             self.big.append(pygame.transform.smoothscale(idle, (round(idle.get_width() * bh / idle.get_height()), bh)))
             head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.45))).copy()
@@ -954,6 +1062,13 @@ class MatchScene(Scene, OnlineMixin):
         self.over_t = 0.0
         self.me = 1 if mode == "client" else 0
         self.frame = pygame.Surface((W, H))
+        self.rings = []
+        self.flashes = []
+        self.ripple = None
+        self.goal_flash = 0.0
+        self.last_count = None
+        self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
+        app.crowd.excite = app.crowd.target = 0.15
         app.sound.ambience(True)
         if self.world:
             self.snap = self.world.snapshot()
@@ -1163,99 +1278,192 @@ class MatchScene(Scene, OnlineMixin):
     def _say(self, txt, color, dur=1.6):
         self.banner = [txt, color, dur, dur]
 
-    def _burst(self, x, y, n, colors, speed=300, life=0.6, size=5, g=600, kind="dot"):
+    def _burst(self, x, y, n, colors, speed=300, life=0.6, size=5, g=600, kind="dot", up=0.3):
         for _ in range(n):
             a = random.uniform(0, math.tau)
             v = random.uniform(0.3, 1) * speed
-            self.parts.append(Particle(x, y, math.cos(a) * v, math.sin(a) * v - speed * 0.3,
+            self.parts.append(Particle(x, y, math.cos(a) * v, math.sin(a) * v - speed * up,
                                        random.uniform(0.5, 1) * life, random.choice(colors), size, g, kind))
+
+    def _ring(self, x, y, r, color, life=0.3):
+        self.rings.append([x, y, r, color, life, life])
+
+    def _dust(self, x, y, n=8, spread=60):
+        for _ in range(n):
+            self.parts.append(Particle(x + random.uniform(-spread / 3, spread / 3), y - 4,
+                                       random.uniform(-spread, spread) * 1.5, random.uniform(-60, -10),
+                                       random.uniform(0.35, 0.6), (205, 190, 160), random.uniform(5, 9), -20,
+                                       "smoke"))
 
     def _process(self, snap):
         snd = self.app.sound
+        crowd = self.app.crowd
         bx, by = snap["b"][0], snap["b"][1]
         ph = snap["ph"]
         if ph != self.prev_phase:
             if ph == "ready":
-                self._say("HAZIR", WHITE, 1.2)
+                self._say("HAZIR", WHITE, 1.0)
             elif ph == "play" and self.prev_phase == "ready":
                 self._say("BAŞLA!", GOLD, 0.8)
             elif ph == "over":
-                pass
+                crowd.kick(1.0, snap["win"])
             self.prev_phase = ph
+        # geri sayim / son saniyeler
+        if ph == "ready":
+            c = int(math.ceil(snap["pt"]))
+            if c != self.last_count and c <= 3:
+                snd.play("beep", 0)
+            self.last_count = c
+        elif ph == "play" and not snap["gg"]:
+            c = int(math.ceil(snap["tm"]))
+            if c != self.last_count and c <= 10:
+                snd.play("tick", 0)
+            self.last_count = c
         for ev in snap.get("ev", []):
             name = ev.split(":")[0]
             if name in ("kick", "head", "bounce", "post", "whistle", "super_fire", "super_ice", "freeze",
-                        "fire_hit", "jump", "swing", "shield", "block", "armed", "end", "golden", "pu_spawn"):
-                snd.play(name, 0.08 if name in ("head", "bounce") else 0.04)
+                        "fire_hit", "jump", "swing", "shield", "block", "armed", "end", "golden", "pu_spawn",
+                        "land"):
+                snd.play(name, 0.08 if name in ("head", "bounce", "land") else 0.04)
             if name == "kick":
-                self._burst(bx, by, 8, [(255, 255, 255), (220, 230, 200)], 220, 0.4, 4)
+                self._burst(bx, by, 10, [(255, 255, 255), (255, 245, 200)], 260, 0.35, 3, 300, "spark", 0)
+                self._ring(bx, by, 46, (255, 255, 255))
+                self.flashes.append([bx, by, 0.12])
+                if bx < 330 or bx > W - 330:
+                    crowd.kick(0.45)
             elif name == "head":
-                self._burst(bx, by, 5, [(255, 255, 255)], 160, 0.3, 3)
+                self._burst(bx, by, 6, [(255, 255, 255)], 180, 0.25, 3, 300, "spark", 0)
+                self._ring(bx, by, 34, (255, 255, 230), 0.22)
             elif name == "bounce" and by > sim.GROUND - 40:
-                self._burst(bx, sim.GROUND, 6, [(150, 120, 80), (110, 160, 70)], 140, 0.4, 4, 500)
+                self._dust(bx, sim.GROUND, 6, 40)
             elif name == "post":
-                self._burst(bx, by, 10, [(255, 255, 200), GOLD], 260, 0.4, 3)
+                self._burst(bx, by, 14, [(255, 255, 200), GOLD], 320, 0.4, 3, 400, "spark", 0)
+                self._ring(bx, by, 60, GOLD, 0.35)
+                snd.play("ooh", 0.5)
+                crowd.kick(0.7)
             elif name == "goal":
                 snd.play("goal", 0)
                 who = snap.get("scr", 0)
                 gx = W - 40 if who == 0 else 40
                 for _ in range(3):
                     self._burst(gx, sim.GOAL_TOP + 40, 40,
-                                [(255, 80, 80), (80, 160, 255), GOLD, (120, 255, 120), WHITE], 650, 1.6, 7, 500,
+                                [(255, 80, 80), (80, 160, 255), GOLD, (120, 255, 120), WHITE], 650, 1.8, 7, 500,
                                 "confetti")
+                # tribunden kagit yagmuru
+                for _ in range(70):
+                    self.parts.append(Particle(random.uniform(0, W), random.uniform(90, 250),
+                                               random.uniform(-80, 80), random.uniform(-200, 0),
+                                               random.uniform(1.8, 3.0),
+                                               random.choice([(255, 80, 80), (80, 160, 255), GOLD, WHITE]),
+                                               5, 260, "confetti"))
                 if self.mode == "local2":
                     msg = "%d. OYUNCU" % (who + 1)
                 elif who == self.me:
                     msg = "SEN ATTIN!"
                 else:
                     msg = "RAKİP ATTI"
-                self._say("GOOOL!", GOLD, 2.2)
-                self.floaters.append([msg, W // 2, 330, 2.0, P_COLORS[who]])
+                self._say("GOOOL!", GOLD, 2.4)
+                self.floaters.append([msg, W // 2, 300, 2.2, P_COLORS[who]])
                 self.shake = 0.5
+                self.ripple = [1 if who == 0 else 0, by, 0.0]
+                self.goal_flash = 0.35
+                crowd.kick(1.0, who)
             elif name in ("super_fire", "super_ice"):
-                c = [FIRE_C, (255, 220, 80)] if name == "super_fire" else [ICE_C, WHITE]
-                self._burst(bx, by, 26, c, 420, 0.6, 6)
-                self.shake = max(self.shake, 0.25)
+                fire = name == "super_fire"
+                c = [FIRE_C, (255, 220, 80), (255, 90, 30)] if fire else [ICE_C, WHITE, (170, 230, 255)]
+                self._burst(bx, by, 30, c, 480, 0.6, 6, 200, "flame" if fire else "snow", 0)
+                self._ring(bx, by, 110, FIRE_C if fire else ICE_C, 0.4)
+                self.flashes.append([bx, by, 0.25])
+                self.shake = max(self.shake, 0.3)
+                snd.play("cheer", 0.6, 0.7)
+                crowd.kick(0.65)
             elif name == "fire_hit":
-                self._burst(bx, by, 30, [FIRE_C, (255, 60, 30), (255, 230, 90)], 500, 0.7, 7)
-                self.shake = 0.35
+                self._burst(bx, by, 40, [FIRE_C, (255, 60, 30), (255, 230, 90)], 520, 0.7, 7, 100, "flame", 0)
+                self._burst(bx, by, 14, [(90, 80, 80)], 120, 1.0, 10, -60, "smoke", 0)
+                self._ring(bx, by, 120, FIRE_C, 0.4)
+                self.shake = 0.4
+                crowd.kick(0.7)
             elif name == "freeze":
-                for p in snap["p"]:
-                    pass
-                self._burst(bx, by, 24, [ICE_C, WHITE], 380, 0.7, 5, 300, "shard")
+                self._burst(bx, by, 26, [ICE_C, WHITE], 380, 0.7, 5, 300, "shard")
+                self._burst(bx, by, 16, [WHITE], 200, 0.8, 4, 0, "snow")
+                self._ring(bx, by, 90, ICE_C, 0.35)
+                crowd.kick(0.6)
             elif name == "block":
-                self._burst(bx, by, 18, [WHITE, GOLD], 380, 0.5, 5)
+                self._burst(bx, by, 22, [WHITE, GOLD], 400, 0.5, 4, 300, "spark", 0)
+                self._ring(bx, by, 80, WHITE, 0.3)
                 self.floaters.append(["KURTARIŞ!", bx, by - 40, 1.2, WHITE])
+                snd.play("ooh", 0.5)
+                crowd.kick(0.75)
             elif name == "shield":
-                self._burst(bx, by, 14, [ICE_C, WHITE], 260, 0.5, 4, 200, "shard")
+                self._burst(bx, by, 16, [ICE_C, WHITE], 260, 0.5, 4, 200, "shard")
+                self._ring(bx, by, 60, ICE_C, 0.3)
             elif name == "golden":
                 self._say("ALTIN GOL!", GOLD, 2.2)
+                crowd.kick(0.8)
             elif name == "pu":
                 _, kind, who = ev.split(":")
                 snd.play("pu", 0)
                 who = int(who)
                 p = snap["p"][who]
                 self.floaters.append([PU_TEXT.get(kind, kind), p[0], p[1] - 200, 1.6, P_COLORS[who]])
-                self._burst(bx, by, 20, [GOLD, WHITE, (120, 255, 200)], 300, 0.6, 5)
-            elif name == "armed":
-                pass
-            elif name == "land":
-                pass
+                self._burst(bx, by, 24, [GOLD, WHITE, (120, 255, 200)], 320, 0.6, 4, 100, "snow", 0)
+                self._ring(bx, by, 70, GOLD, 0.35)
+        # oyuncu durum gecisleri: inis/ziplama/buz cozulmesi
+        for i, p in enumerate(snap["p"]):
+            st = self.pstate[i]
+            x, y, on_ground, frozen = p[0], p[1], p[8], p[5]
+            if st["og"] is not None:
+                if on_ground and not st["og"]:
+                    st["sq"] = 0.16
+                    st["st"] = 0
+                    self._dust(x, y, 6, 45)
+                elif not on_ground and st["og"] and y < sim.GROUND - 2:
+                    st["st"] = 0.16
+                    self._dust(x, sim.GROUND, 4, 30)
+            if st["fz"] > 0.05 and frozen <= 0:
+                h = sim.BASE_H * sim.CHARACTERS[p[9]]["scale"]
+                self._burst(x, y - h / 2, 34, [ICE_C, WHITE, (180, 235, 255)], 420, 0.8, 7, 700, "shard")
+                snd.play("shatter", 0.1)
+            st["og"] = on_ground
+            st["fz"] = frozen
+        # top kaleye yakin ve hizli: tribun heyecanlanir
+        b = snap["b"]
+        if (b[0] < 300 and b[4] < -300) or (b[0] > W - 300 and b[4] > 300):
+            crowd.target = max(crowd.target, 0.4)
         self.shake = max(self.shake, snap.get("shk", 0) or 0)
 
     def _update_fx(self, dt):
+        self.app.crowd.update(dt)
         for p in self.parts:
             p.vy += p.g * dt
             if p.kind == "confetti":
                 p.vx *= (1 - 2.0 * dt)
-                p.vy = min(p.vy, 160)
+                p.vy = min(p.vy, 140)
+                p.vx += math.sin(p.rot * 0.05) * 30 * dt
+            elif p.kind in ("smoke", "snow"):
+                p.vx *= (1 - 2.5 * dt)
+                p.vy *= (1 - 2.5 * dt) if p.kind == "snow" else 1
             p.x += p.vx * dt
             p.y += p.vy * dt
             p.rot += p.vr * dt
             p.life -= dt
         self.parts = [p for p in self.parts if p.life > 0 and p.y < H + 20]
-        if len(self.parts) > 600:
-            self.parts = self.parts[-600:]
+        if len(self.parts) > 700:
+            self.parts = self.parts[-700:]
+        for r in self.rings:
+            r[4] -= dt
+        self.rings = [r for r in self.rings if r[4] > 0]
+        for f in self.flashes:
+            f[2] -= dt
+        self.flashes = [f for f in self.flashes if f[2] > 0]
+        if self.ripple:
+            self.ripple[2] += dt
+            if self.ripple[2] > 1.4:
+                self.ripple = None
+        self.goal_flash = max(0.0, self.goal_flash - dt)
+        for st in self.pstate:
+            st["sq"] = max(0.0, st["sq"] - dt)
+            st["st"] = max(0.0, st["st"] - dt)
         if self.banner:
             self.banner[2] -= dt
             if self.banner[2] <= 0:
@@ -1265,72 +1473,107 @@ class MatchScene(Scene, OnlineMixin):
             f[3] -= dt
         self.floaters = [f for f in self.floaters if f[3] > 0]
         self.shake = max(0.0, self.shake - dt)
-        # super/ates izleri
-        if self.snap:
-            b = self.snap["b"]
-            if b[3] == 1:
-                for _ in range(3):
-                    self.parts.append(Particle(b[0] + random.uniform(-10, 10), b[1] + random.uniform(-10, 10),
-                                               random.uniform(-60, 60), random.uniform(-90, 0), 0.35,
-                                               random.choice([FIRE_C, (255, 220, 80), (255, 80, 30)]), 6, -100))
-            elif b[3] == 2:
-                for _ in range(2):
-                    self.parts.append(Particle(b[0] + random.uniform(-12, 12), b[1] + random.uniform(-12, 12),
-                                               random.uniform(-40, 40), random.uniform(-40, 40), 0.45,
-                                               random.choice([ICE_C, WHITE]), 4, 0, "shard"))
-            for p in self.snap["p"]:
-                if p[10] > 0 and abs(p[2]) > 100 and p[8]:
-                    self.parts.append(Particle(p[0] - (12 if p[2] > 0 else -12), p[1] - random.uniform(5, 60),
-                                               -p[2] * 0.2, 0, 0.25, (255, 230, 120), 3, 0))
+        if not self.snap:
+            return
+        b = self.snap["b"]
+        rr = random.uniform
+        if b[3] == 1:
+            for _ in range(4):
+                self.parts.append(Particle(b[0] + rr(-12, 12), b[1] + rr(-12, 12), rr(-50, 50) - b[4] * 0.08,
+                                           rr(-120, -20) - b[5] * 0.08, rr(0.25, 0.45),
+                                           random.choice([FIRE_C, (255, 220, 80), (255, 90, 30)]),
+                                           rr(7, 12), -200, "flame"))
+            if random.random() < 0.5:
+                self.parts.append(Particle(b[0], b[1], rr(-30, 30), rr(-60, -20), rr(0.5, 0.8),
+                                           (80, 70, 70), rr(6, 10), -40, "smoke"))
+        elif b[3] == 2:
+            for _ in range(3):
+                self.parts.append(Particle(b[0] + rr(-14, 14), b[1] + rr(-14, 14), rr(-40, 40), rr(-40, 40),
+                                           rr(0.35, 0.6), random.choice([ICE_C, WHITE, (170, 230, 255)]),
+                                           rr(3, 5), 60, random.choice(("shard", "snow"))))
+        elif math.hypot(b[4], b[5]) > 1000 and random.random() < 0.5:
+            self.parts.append(Particle(b[0], b[1], 0, 0, 0.18, (255, 255, 255), 6, 0, "smoke"))
+        for i, p in enumerate(self.snap["p"]):
+            x, y, vx = p[0], p[1], p[2]
+            h = sim.BASE_H * sim.CHARACTERS[p[9]]["scale"]
+            if p[10] > 0 and abs(vx) > 100 and p[8]:
+                self.parts.append(Particle(x - (14 if vx > 0 else -14), y - rr(10, h * 0.8), -vx * 0.25, 0, 0.22,
+                                           (255, 230, 120), 3, 0, "spark"))
+            elif abs(vx) > 250 and p[8] and random.random() < 0.12:
+                self._dust(x - (10 if vx > 0 else -10), y, 1, 25)
+            if p[7] > 0:
+                if sim.CHARACTERS[p[9]]["power"] == "fire":
+                    for _ in range(2):
+                        self.parts.append(Particle(x + rr(-34, 34), y - rr(0, h * 0.9), rr(-15, 15), rr(-90, -40),
+                                                   rr(0.3, 0.55), random.choice([FIRE_C, (255, 200, 70)]),
+                                                   rr(6, 10), -120, "flame"))
+                else:
+                    a = self.t * 5 + rr(0, 6.28)
+                    self.parts.append(Particle(x + math.cos(a) * 42, y - h * 0.5 + math.sin(a) * 60,
+                                               rr(-20, 20), rr(-30, 10), rr(0.4, 0.7),
+                                               random.choice([ICE_C, WHITE]), rr(3, 5), 0, "snow"))
+            if p[5] > 0 and random.random() < 0.15:
+                self.parts.append(Particle(x + rr(-35, 35), y - rr(10, h), 0, rr(-15, 15), 0.6, WHITE, 3, 0,
+                                           "snow"))
 
     # -------------------------------------------------- cizim
     def draw(self, screen):
         A = self.app.assets
         s = self.frame
         s.blit(A.stadium, (0, 0))
+        self.app.crowd.draw(s)
+        for i, lx in enumerate((168, 400, 636, 878, 1108)):
+            fx.blit_glow(s, lx, 8, 70 + 6 * math.sin(self.t * 2 + i), (120, 115, 90))
         snap = self.snap
         if snap is None:
             screen.blit(s, (0, 0))
             draw_text(screen, "Bağlanıyor...", 40, (W // 2, H // 2), WHITE)
             return
         self._draw_goal_back(s, snap)
-        # golgeler
         b = snap["b"]
-        for x, y, wdt in [(p[0], p[1], 70) for p in snap["p"]] + [(b[0], b[1], 40)]:
+        for x, y, wdt in [(p[0], p[1], 70) for p in snap["p"]] + [(b[0], b[1], 44)]:
             hgt = max(0.0, sim.GROUND - y)
             k = max(0.25, 1 - hgt / 420)
-            sh = pygame.Surface((int(wdt * k) + 2, int(14 * k) + 2), pygame.SRCALPHA)
-            pygame.draw.ellipse(sh, (0, 0, 0, int(90 * k)), sh.get_rect())
-            s.blit(sh, sh.get_rect(center=(x, sim.GROUND + 2)))
-        # guc simgesi
+            sh = fx.soft_dot(int(wdt * k / 2) + 2, (0, 0, 0))
+            sh = pygame.transform.smoothscale(sh, (sh.get_width(), max(4, int(sh.get_height() * 0.28))))
+            sh.set_alpha(int(150 * k))
+            s.blit(sh, sh.get_rect(center=(x, sim.GROUND + 3)))
+            sh.set_alpha(255)
         if snap.get("pu"):
             kind, px, py, life = snap["pu"]
             img = A.pu.get(kind)
             if img and (life > 2 or int(self.t * 8) % 2 == 0):
                 bob = math.sin(self.t * 3) * 8
-                glow = pygame.Surface((110, 110), pygame.SRCALPHA)
-                pygame.draw.circle(glow, (255, 255, 200, int(60 + 40 * math.sin(self.t * 6))), (55, 55), 50)
-                s.blit(glow, glow.get_rect(center=(px, py + bob)))
-                s.blit(img, img.get_rect(center=(px, py + bob)))
+                fx.blit_glow(s, px, py + bob, 62 + 6 * math.sin(self.t * 6), (110, 100, 50))
+                sp = pygame.transform.rotozoom(img, math.sin(self.t * 2.5) * 10, 1 + 0.05 * math.sin(self.t * 6))
+                s.blit(sp, sp.get_rect(center=(px, py + bob)))
+                for k in range(3):
+                    a = self.t * 2 + k * 2.09
+                    sx, sy = px + math.cos(a) * 44, py + bob + math.sin(a) * 44
+                    self._star(s, sx, sy, 4 + 2 * math.sin(self.t * 8 + k), (255, 250, 210))
+        # arkadaki parcaciklar (duman)
+        for p in self.parts:
+            if p.kind == "smoke":
+                self._draw_particle(s, p)
         for i, p in enumerate(snap["p"]):
-            self._draw_player(s, i, p)
+            self._draw_player(s, i, p, snap)
         self._draw_ball(s, b)
         self._draw_goal_front(s, snap)
-        # parcaciklar
         for p in self.parts:
-            a = max(0.0, min(1.0, p.life / p.max))
-            if p.kind == "confetti":
-                r = pygame.Rect(0, 0, p.size, int(p.size * 1.6 * abs(math.cos(math.radians(p.rot)))) + 1)
-                r.center = (p.x, p.y)
-                pygame.draw.rect(s, p.color, r)
-            elif p.kind == "shard":
-                pts = [(p.x + math.cos(math.radians(p.rot + k * 120)) * p.size * (1.6 if k == 0 else 0.7),
-                        p.y + math.sin(math.radians(p.rot + k * 120)) * p.size * (1.6 if k == 0 else 0.7))
-                       for k in range(3)]
-                pygame.draw.polygon(s, p.color, pts)
-            else:
-                rad = max(1, int(p.size * (0.4 + 0.6 * a)))
-                pygame.draw.circle(s, p.color, (int(p.x), int(p.y)), rad)
+            if p.kind != "smoke":
+                self._draw_particle(s, p)
+        for x, y, r, col, life, mx in self.rings:
+            k = 1 - life / mx
+            rad = int(10 + r * k)
+            pygame.draw.circle(s, col, (int(x), int(y)), rad, max(1, int(5 * (1 - k))))
+        for x, y, life in self.flashes:
+            fx.blit_glow(s, x, y, 40 + life * 200, (255, 245, 220))
+        if self.goal_flash > 0:
+            fl = pygame.Surface((W, H))
+            v = int(110 * self.goal_flash / 0.35)
+            fl.fill((v, v, int(v * 0.8)))
+            s.blit(fl, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+        s.blit(A.vignette, (0, 0))
         self._draw_hud(s, snap)
         ox = oy = 0
         if self.shake > 0:
@@ -1340,26 +1583,87 @@ class MatchScene(Scene, OnlineMixin):
         screen.blit(s, (ox, oy))
         self._draw_overlays(screen, snap)
 
+    @staticmethod
+    def _star(s, x, y, r, col):
+        pts = []
+        for k in range(8):
+            rad = r if k % 2 == 0 else r * 0.35
+            a = k * math.pi / 4
+            pts.append((x + math.cos(a) * rad, y + math.sin(a) * rad))
+        pygame.draw.polygon(s, col, pts)
+
+    def _draw_particle(self, s, p):
+        a = max(0.0, min(1.0, p.life / p.max))
+        k = p.kind
+        if k == "confetti":
+            r = pygame.Rect(0, 0, p.size, int(p.size * 1.6 * abs(math.cos(math.radians(p.rot)))) + 1)
+            r.center = (p.x, p.y)
+            pygame.draw.rect(s, p.color, r)
+        elif k == "shard":
+            sz = p.size * (0.5 + 0.5 * a)
+            pts = [(p.x + math.cos(math.radians(p.rot + j * 120)) * sz * (1.7 if j == 0 else 0.7),
+                    p.y + math.sin(math.radians(p.rot + j * 120)) * sz * (1.7 if j == 0 else 0.7)) for j in range(3)]
+            pygame.draw.polygon(s, p.color, pts)
+            pygame.draw.polygon(s, (255, 255, 255), pts, 1)
+        elif k == "flame":
+            t = 1 - a
+            if t < 0.3:
+                col = (255, 230, 140)
+            elif t < 0.6:
+                col = (255, 150, 40)
+            else:
+                col = (210, 60, 20)
+            fx.blit_glow(s, p.x, p.y, p.size * (1.6 - t * 0.9), col)
+        elif k == "smoke":
+            img = fx.soft_dot(int(p.size * (1 + (1 - a) * 1.5)), p.color)
+            img.set_alpha(int(140 * a))
+            s.blit(img, img.get_rect(center=(p.x, p.y)))
+            img.set_alpha(255)
+        elif k == "spark":
+            ex, ey = p.x - p.vx * 0.035, p.y - p.vy * 0.035
+            pygame.draw.line(s, p.color, (p.x, p.y), (ex, ey), 2)
+        elif k == "snow":
+            self._star(s, p.x, p.y, p.size * (0.4 + 0.6 * a) * (1 + 0.3 * math.sin(p.rot * 0.1)), p.color)
+        else:
+            rad = max(1, int(p.size * (0.4 + 0.6 * a)))
+            pygame.draw.circle(s, p.color, (int(p.x), int(p.y)), rad)
+
     def _draw_goal_back(self, s, snap):
         GD, GT, GR = sim.GOAL_D, sim.GOAL_TOP, sim.GROUND
-        net = pygame.Surface((GD, GR - GT), pygame.SRCALPHA)
-        net.fill((255, 255, 255, 28))
-        for x in range(0, GD, 14):
-            pygame.draw.line(net, (255, 255, 255, 120), (x, 0), (x, GR - GT), 2)
-        for y in range(0, GR - GT, 14):
-            pygame.draw.line(net, (255, 255, 255, 120), (0, y), (GD, y), 2)
-        s.blit(net, (0, GT))
-        s.blit(net, (W - GD, GT))
-        # arka direk
+        A = self.app.assets
+        rp = self.ripple
+        for side in (0, 1):
+            x0 = 0 if side == 0 else W - GD
+            s.blit(A.net_shade, (x0, GT))
+            if rp and rp[0] == side:
+                t = rp[2]
+                amp = 16 * math.exp(-t * 3.2)
+                d = -1 if side == 0 else 1
+                for gx in range(0, GD + 1, 14):
+                    u = gx / GD if side == 1 else 1 - gx / GD
+                    pts = []
+                    for gy in range(0, GR - GT + 1, 10):
+                        dist = (GT + gy - rp[1]) / 70.0
+                        off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2) * (0.3 + u)
+                        pts.append((x0 + gx + d * off, GT + gy))
+                    pygame.draw.lines(s, (240, 240, 245), False, pts, 2)
+                for gy in range(0, GR - GT, 14):
+                    dist = (GT + gy - rp[1]) / 70.0
+                    off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2)
+                    pygame.draw.line(s, (240, 240, 245), (x0, GT + gy), (x0 + GD + d * off * 0.3, GT + gy), 2)
+            else:
+                s.blit(A.net_lines, (x0, GT))
         for x in (6, W - 6):
             pygame.draw.line(s, (200, 200, 210), (x, GT), (x, GR), 6)
         for i in range(2):
             if snap["sh"][i] > 0:
                 x = sim.GOAL_D + 2 if i == 0 else W - sim.GOAL_D - 2
-                wall = pygame.Surface((22, GR - GT), pygame.SRCALPHA)
-                al = 150 if snap["sh"][i] > 1.5 or int(self.t * 10) % 2 else 60
+                wall = pygame.Surface((26, GR - GT), pygame.SRCALPHA)
+                al = 140 if snap["sh"][i] > 1.5 or int(self.t * 10) % 2 else 60
                 wall.fill((140, 220, 255, al))
+                pygame.draw.line(wall, (255, 255, 255, 200), (6, 10), (6, GR - GT - 10), 2)
                 s.blit(wall, wall.get_rect(midtop=(x, GT)))
+                fx.blit_glow(s, x, GT + (GR - GT) / 2, 90, (30, 70, 100))
                 ice = self.app.assets.ice_block
                 for yy in range(GT + 30, GR, 70):
                     s.blit(ice, ice.get_rect(center=(x, yy)))
@@ -1375,44 +1679,71 @@ class MatchScene(Scene, OnlineMixin):
                 postx = W - GD
             pygame.draw.rect(s, (30, 30, 40), roof.inflate(4, 4), 0, border_radius=6)
             pygame.draw.rect(s, (245, 245, 250), roof, 0, border_radius=6)
+            pygame.draw.line(s, (255, 255, 255), (roof.x + 4, roof.y + 3), (roof.right - 4, roof.y + 3), 2)
             pygame.draw.line(s, (30, 30, 40), (postx, GT - 2), (postx, GR), 12)
             pygame.draw.line(s, (245, 245, 250), (postx, GT - 2), (postx, GR), 8)
-            pygame.draw.line(s, (255, 90, 90), (postx, GT + 20), (postx, GT + 40), 8)
-            pygame.draw.line(s, (255, 90, 90), (postx, GT + 70), (postx, GT + 90), 8)
+            pygame.draw.line(s, (255, 255, 255), (postx - 2, GT), (postx - 2, GR), 2)
+            for yy in (GT + 20, GT + 70, GT + 120, GT + 170):
+                pygame.draw.line(s, (230, 70, 70), (postx, yy), (postx, yy + 20), 8)
 
-    def _draw_player(self, s, i, p):
+    def _player_img(self, char, p, snap, i):
+        """Duruma gore uygun pozu sec."""
+        A = self.app.assets
+        x, y, vx, face, kick_t, frozen, meter, armed, on_ground, _, speed_t, jump_t, stun, run_t = p
+        poses = A.poses[char]
+        ice = frozen > 0
+        celebrate = (snap["ph"] == "goal" and snap.get("scr") == i) or (snap["ph"] == "over" and snap["win"] == i)
+        if kick_t > 0.04:
+            return (A.kick_ice if ice else A.kick)[char], "kick"
+        if celebrate and "celeb" in poses:
+            return poses["celeb"], "celeb"
+        if not on_ground and "jump" in poses:
+            return (poses["jump_ice"] if ice else poses["jump"]), "jump"
+        if on_ground and abs(vx) > 40 and not ice and "run1" in poses:
+            return (poses["run1"] if int(run_t * 9) % 2 == 0 else poses["run2"]), "run"
+        return (A.idle_ice if ice else A.idle)[char], "idle"
+
+    def _draw_player(self, s, i, p, snap):
         A = self.app.assets
         x, y, vx, face, kick_t, frozen, meter, armed, on_ground, char, speed_t, jump_t, stun, run_t = p
-        kicking = kick_t > 0.04
-        if frozen > 0:
-            img = A.kick_ice[char] if kicking else A.idle_ice[char]
-        else:
-            img = A.kick[char] if kicking else A.idle[char]
+        img, pose = self._player_img(char, p, snap, i)
         flip = face < 0
         if flip:
             img = A.flipped(img)
+        h = sim.BASE_H * sim.CHARACTERS[char]["scale"]
         tilt = 0
         bob = 0
-        if on_ground and abs(vx) > 40 and frozen <= 0:
-            bob = abs(math.sin(run_t * 14)) * 5
-            tilt = math.sin(run_t * 14) * 4
+        if pose in ("idle", "run") and on_ground and abs(vx) > 40 and frozen <= 0:
+            bob = abs(math.sin(run_t * 14)) * (5 if pose == "idle" else 3)
+            tilt = math.sin(run_t * 14) * (4 if pose == "idle" else 2) + (3 if pose == "run" else 0) * (1 if vx > 0 else -1)
+        if pose == "idle" and frozen <= 0 and on_ground and abs(vx) <= 40:
+            # nefes alma
+            bob = math.sin(self.t * 3 + i) * 1.2
+        if pose == "celeb" or (snap["ph"] == "goal" and snap.get("scr") == i and on_ground):
+            bob = abs(math.sin(self.t * 9)) * 16
         if stun > 0:
             tilt = math.sin(self.t * 30) * 12
-        if not on_ground and not kicking:
+        if not on_ground and pose != "kick":
             tilt = -6 * face if vx * face > 0 else 0
-        # super aura
+        st = self.pstate[i]
+        sx = sy = 1.0
+        if st["sq"] > 0:
+            k = st["sq"] / 0.16
+            sx, sy = 1 + 0.16 * k, 1 - 0.14 * k
+        elif st["st"] > 0:
+            k = st["st"] / 0.16
+            sx, sy = 1 - 0.08 * k, 1 + 0.1 * k
         if armed > 0:
             pw = sim.CHARACTERS[char]["power"]
-            c = FIRE_C if pw == "fire" else ICE_C
-            aura = pygame.Surface((180, 220), pygame.SRCALPHA)
-            r = 80 + math.sin(self.t * 12) * 8
-            pygame.draw.ellipse(aura, c + (70,), pygame.Rect(90 - r * 0.8, 110 - r, r * 1.6, r * 2))
-            pygame.draw.ellipse(aura, c + (140,), pygame.Rect(90 - r * 0.8, 110 - r, r * 1.6, r * 2), 4)
-            s.blit(aura, aura.get_rect(center=(x, y - 82)))
+            c = (130, 60, 10) if pw == "fire" else (30, 90, 130)
+            fx.blit_glow(s, x, y - h * 0.5, 95 + 8 * math.sin(self.t * 12), c)
+        if sx != 1.0 or sy != 1.0:
+            img = pygame.transform.smoothscale(img, (max(1, int(img.get_width() * sx)),
+                                                     max(1, int(img.get_height() * sy))))
         if tilt:
             img = pygame.transform.rotate(img, -tilt * (1 if not flip else -1))
         rect = img.get_rect()
-        if kicking:
+        if pose == "kick":
             ax = A.kick_anchor[char]
             rect.bottom = int(y - bob)
             if flip:
@@ -1421,34 +1752,46 @@ class MatchScene(Scene, OnlineMixin):
                 rect.left = int(x - rect.w * ax)
         else:
             rect.midbottom = (int(x), int(y - bob))
-        s.blit(img, rect)
         if frozen > 0:
-            ice = A.fx_ice
-            s.blit(ice, ice.get_rect(center=(x, y - 70)))
-            draw_text(s, "%.1f" % frozen, 18, (x, y - 175), ICE_C, outline=2)
+            # buz kalibi
+            blk = pygame.Rect(0, 0, 96, int(h + 26))
+            blk.midbottom = (int(x), int(y + 4))
+            ice = pygame.Surface(blk.size, pygame.SRCALPHA)
+            pygame.draw.rect(ice, (150, 220, 255, 70), ice.get_rect(), 0, border_radius=14)
+            s.blit(img, rect)
+            s.blit(ice, blk)
+            pygame.draw.rect(s, (220, 245, 255), blk, 3, border_radius=14)
+            pygame.draw.line(s, (255, 255, 255), (blk.x + 14, blk.y + 18), (blk.x + 30, blk.y + 60), 3)
+            pygame.draw.line(s, (255, 255, 255), (blk.x + 22, blk.y + 14), (blk.x + 34, blk.y + 38), 2)
+            pygame.draw.line(s, (200, 240, 255), (blk.right - 20, blk.bottom - 50), (blk.right - 10, blk.bottom - 20), 2)
+            ice2 = A.fx_ice
+            s.blit(ice2, ice2.get_rect(center=(x, y - 20)))
+            draw_text(s, "%.1f" % frozen, 20, (x, blk.y - 14), ICE_C, outline=3)
+        else:
+            s.blit(img, rect)
         if stun > 0:
             for k in range(3):
                 a = self.t * 8 + k * 2.1
-                pygame.draw.circle(s, GOLD, (int(x + math.cos(a) * 26), int(y - 170 + math.sin(a) * 8)), 5)
+                self._star(s, x + math.cos(a) * 28, y - h - 8 + math.sin(a) * 8, 7, GOLD)
         if jump_t > 0:
-            pygame.draw.ellipse(s, (120, 255, 160), (x - 30, y - 6, 60, 12), 3)
-        # isaretci
+            pygame.draw.ellipse(s, (120, 255, 160), (x - 32, y - 7, 64, 14), 3)
         label = None
         if self.mode == "local2":
             label = "P%d" % (i + 1)
         elif i == self.me:
             label = "SEN"
         if label:
-            ty = y - (sim.BASE_H * sim.CHARACTERS[char]["scale"]) - 26 + math.sin(self.t * 5) * 3
+            ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
             pygame.draw.polygon(s, P_COLORS[i], [(x - 9, ty + 10), (x + 9, ty + 10), (x, ty + 20)])
             draw_text(s, label, 18, (x, ty), P_COLORS[i], outline=3)
 
     def _draw_ball(self, s, b):
         A = self.app.assets
         x, y, ang, mode, vx, vy = b
+        sp = math.hypot(vx, vy) or 1
         if mode in (1, 2):
-            sp = math.hypot(vx, vy) or 1
             dx, dy = -vx / sp, -vy / sp
+            fx.blit_glow(s, x, y, 80, (150, 70, 10) if mode == 1 else (40, 110, 160))
             trail = A.fx_fire if mode == 1 else A.fx_ice
             a = math.degrees(math.atan2(-dy, dx))
             tr = pygame.transform.rotate(trail, a)
@@ -1458,6 +1801,12 @@ class MatchScene(Scene, OnlineMixin):
         else:
             img = A.ball
         img = pygame.transform.rotate(img, -math.degrees(ang) % 360)
+        if mode == 0 and sp > 750:
+            k = min(1.0, (sp - 750) / 700)
+            for j, al in ((3, 50), (2, 80), (1, 120)):
+                img.set_alpha(int(al * k))
+                s.blit(img, img.get_rect(center=(int(x - vx * 0.011 * j), int(y - vy * 0.011 * j))))
+            img.set_alpha(255)
         s.blit(img, img.get_rect(center=(int(x), int(y))))
 
     def _draw_hud(self, s, snap):
@@ -1622,6 +1971,7 @@ class App:
         draw_text(self.screen, "Yükleniyor...", 40, (W // 2, H // 2))
         pygame.display.flip()
         self.assets = Assets()
+        self.crowd = fx.Crowd(res, W)
         self.sound = Sound()
         self.clock = pygame.time.Clock()
         self.running = True

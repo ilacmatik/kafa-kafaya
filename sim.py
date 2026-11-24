@@ -266,6 +266,8 @@ class World:
                 self.events.append("golden")
         if self.phase == "goal":
             self.phase_t -= dt
+            if self.phase_t > 2.4 - 0.7:
+                dt *= 0.3  # gol aninda agir cekim
             if self.phase_t <= 0:
                 if self.golden or (self.time_left <= 0 and self.score[0] != self.score[1]):
                     self._end()
