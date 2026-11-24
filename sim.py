@@ -1,0 +1,627 @@
+"""Kafa Kafaya - oyun simulasyonu (pygame'den bagimsiz).
+
+Host (veya tek PC modu) bu simulasyonu calistirir; istemci sadece
+snapshot() ciktisini cizer.
+"""
+import math
+import random
+
+W, H = 1280, 720
+GROUND = 652
+GOAL_D = 105          # kale derinligi (px)
+GOAL_H = 235          # kale agzi yuksekligi
+ROOF_T = 12           # ust direk/cati kalinligi
+GOAL_TOP = GROUND - GOAL_H
+
+BALL_R = 24
+BALL_G = 1250.0
+PLAYER_G = 1750.0
+BALL_MAX = 1700.0
+
+SUPER_SPEED = 1150.0
+SUPER_TIME = 1.0
+METER_PER_SEC = 3.0
+METER_PER_TOUCH = 3.0
+
+PU_KINDS = ["speed", "jump", "shield", "freeze", "gold"]
+
+# isim, hiz, ziplama, sut gucu, boy carpani, kafa carpani, super tipi
+CHARACTERS = [
+    {"name": "ALEV",   "speed": 335, "jump": 650, "kick": 1.12, "scale": 1.00, "head": 1.00, "power": "fire"},
+    {"name": "KAPTAN", "speed": 320, "jump": 655, "kick": 1.06, "scale": 1.02, "head": 1.05, "power": "fire"},
+    {"name": "DUVAR",  "speed": 300, "jump": 700, "kick": 0.95, "scale": 1.00, "head": 1.12, "power": "ice"},
+    {"name": "SARI",   "speed": 322, "jump": 715, "kick": 1.00, "scale": 1.03, "head": 1.00, "power": "ice"},
+    {"name": "SIMSEK", "speed": 385, "jump": 645, "kick": 0.95, "scale": 0.95, "head": 0.95, "power": "fire"},
+    {"name": "TANK",   "speed": 275, "jump": 610, "kick": 1.30, "scale": 1.08, "head": 1.10, "power": "ice"},
+]
+# ekranda gosterilen isimler (Turkce karakterli)
+DISPLAY_NAMES = ["ALEV", "KAPTAN", "DUVAR", "SARI", "ŞİMŞEK", "TANK"]
+STAT_BARS = [  # hiz, ziplama, sut (0-5) - secim ekrani icin
+    (4, 3, 4), (3, 3, 4), (2, 5, 2), (3, 5, 3), (5, 2, 2), (1, 1, 5),
+]
+
+BASE_H = 160.0
+
+
+def clamp(v, a, b):
+    return a if v < a else b if v > b else v
+
+
+class Player:
+    def __init__(self, idx, char):
+        self.idx = idx
+        self.char = char
+        c = CHARACTERS[char]
+        self.stats = c
+        self.h = BASE_H * c["scale"]
+        self.head_r = 27.0 * c["head"] * c["scale"]
+        self.body_r = 29.0 * c["scale"]
+        self.dir = 1 if idx == 0 else -1     # hucum yonu
+        self.reset()
+        self.meter = 0.0
+
+    def reset(self):
+        self.x = 330.0 if self.idx == 0 else W - 330.0
+        self.y = float(GROUND)
+        self.vx = 0.0
+        self.vy = 0.0
+        self.face = self.dir
+        self.on_ground = True
+        self.kick_t = 0.0
+        self.kick_hit = False
+        self.frozen = 0.0
+        self.stun = 0.0
+        self.speed_t = 0.0
+        self.jump_t = 0.0
+        self.armed = 0.0
+        self.run_t = 0.0
+        self.touch_cd = 0.0
+
+    # carpisma daireleri
+    def head(self):
+        return self.x + self.face * 3, self.y - self.h + self.head_r + 4, self.head_r
+
+    def body(self):
+        return self.x, self.y - self.body_r - 14 * self.stats["scale"], self.body_r
+
+    def foot(self):
+        return self.x + self.face * 40 * self.stats["scale"], self.y - 34, 42.0
+
+    @property
+    def disabled(self):
+        return self.frozen > 0 or self.stun > 0
+
+
+class Ball:
+    def __init__(self):
+        self.reset()
+
+    def reset(self, x=W / 2, y=250.0):
+        self.x = x
+        self.y = y
+        self.vx = random.choice((-1, 1)) * random.uniform(20, 60)
+        self.vy = 0.0
+        self.ang = 0.0
+        self.mode = 0          # 0 normal, 1 ates, 2 buz
+        self.mode_t = 0.0
+        self.owner = -1        # super sutu atan
+        self.hit_cd = [0.0, 0.0]
+
+
+class World:
+    def __init__(self, char0, char1, duration=90):
+        self.players = [Player(0, char0), Player(1, char1)]
+        self.ball = Ball()
+        self.score = [0, 0]
+        self.duration = duration
+        self.time_left = float(duration)
+        self.phase = "ready"
+        self.phase_t = 2.6
+        self.golden = False
+        self.winner = -1
+        self.last_touch = -1
+        self.events = []
+        self.pu = None             # [tur, x, y, omur]
+        self.pu_timer = random.uniform(7, 11)
+        self.shield = [0.0, 0.0]   # kendi kalesini koruyan buz duvari
+        self.scorer = -1
+        self.shake = 0.0
+        self.events.append("whistle")
+
+    # ------------------------------------------------------------ girdiler
+    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed):
+        p = self.players[i]
+        if self.phase in ("ready", "over"):
+            p.vx = 0
+            return
+        if p.disabled:
+            p.vx *= 0.85
+            return
+        spd = p.stats["speed"] * (1.45 if p.speed_t > 0 else 1.0)
+        move = (1 if right else 0) - (1 if left else 0)
+        target = move * spd
+        # hafif ivmelenme
+        p.vx += (target - p.vx) * (0.35 if p.on_ground else 0.18)
+        if move:
+            p.face = move
+        else:
+            # durunca rakip kaleye don
+            if p.on_ground and p.kick_t <= 0:
+                p.face = p.dir
+        if jump and p.on_ground:
+            p.vy = -p.stats["jump"] * (1.28 if p.jump_t > 0 else 1.0)
+            p.on_ground = False
+            self.events.append("jump")
+        if kick_pressed and p.kick_t <= 0:
+            p.kick_t = 0.24
+            p.kick_hit = False
+            self.events.append("swing")
+        if super_pressed and p.meter >= 100 and p.armed <= 0:
+            p.meter = 0
+            p.armed = 5.0
+            self.events.append("armed")
+            b = self.ball
+            if math.hypot(b.x - p.x, b.y - (p.y - p.h * 0.5)) < 150:
+                self._super_shot(p)
+
+    # ------------------------------------------------------------ yardimcilar
+    def _super_shot(self, p):
+        b = self.ball
+        p.armed = 0
+        kind = 1 if p.stats["power"] == "fire" else 2
+        gx = W - GOAL_D * 0.5 if p.idx == 0 else GOAL_D * 0.5
+        gy = GROUND - random.uniform(40, GOAL_H - 50)
+        dx, dy = gx - b.x, gy - b.y
+        d = math.hypot(dx, dy) or 1
+        b.vx = dx / d * SUPER_SPEED
+        b.vy = dy / d * SUPER_SPEED
+        b.mode = kind
+        b.mode_t = SUPER_TIME
+        b.owner = p.idx
+        self.last_touch = p.idx
+        self.events.append("super_fire" if kind == 1 else "super_ice")
+        self.shake = 0.25
+
+    def _touch(self, p):
+        if p.touch_cd <= 0:
+            p.meter = min(100.0, p.meter + METER_PER_TOUCH)
+            p.touch_cd = 0.35
+        self.last_touch = p.idx
+        if p.armed > 0:
+            self._super_shot(p)
+            return True
+        return False
+
+    def _circle_vs_ball(self, cx, cy, r, pvx, pvy, e=0.55):
+        b = self.ball
+        dx, dy = b.x - cx, b.y - cy
+        d = math.hypot(dx, dy)
+        rr = r + BALL_R
+        if d >= rr or d == 0:
+            return False
+        nx, ny = dx / d, dy / d
+        b.x += nx * (rr - d)
+        b.y += ny * (rr - d)
+        rvx, rvy = b.vx - pvx, b.vy - pvy
+        vn = rvx * nx + rvy * ny
+        if vn < 0:
+            b.vx -= (1 + e) * vn * nx
+            b.vy -= (1 + e) * vn * ny
+        # minimum cikis hizi (topun oyuncuya yapismasini engeller)
+        vn2 = (b.vx - pvx) * nx + (b.vy - pvy) * ny
+        if vn2 < 140:
+            b.vx += nx * (140 - vn2)
+            b.vy += ny * (140 - vn2)
+        return True
+
+    def _rect_vs_ball(self, x0, y0, x1, y1, e=0.6):
+        b = self.ball
+        cx = clamp(b.x, x0, x1)
+        cy = clamp(b.y, y0, y1)
+        dx, dy = b.x - cx, b.y - cy
+        d = math.hypot(dx, dy)
+        if d >= BALL_R:
+            return False
+        if d == 0:
+            # merkez dikdortgen icinde: yukari it
+            b.y = y0 - BALL_R
+            b.vy = -abs(b.vy) * e
+            return True
+        nx, ny = dx / d, dy / d
+        b.x += nx * (BALL_R - d)
+        b.y += ny * (BALL_R - d)
+        vn = b.vx * nx + b.vy * ny
+        if vn < 0:
+            b.vx -= (1 + e) * vn * nx
+            b.vy -= (1 + e) * vn * ny
+            if abs(vn) > 200:
+                self.events.append("post")
+        return True
+
+    def _goal_rects(self):
+        return [
+            (0, GOAL_TOP - ROOF_T, GOAL_D + 6, GOAL_TOP),
+            (W - GOAL_D - 6, GOAL_TOP - ROOF_T, W, GOAL_TOP),
+        ]
+
+    # ------------------------------------------------------------ adim
+    def step(self, dt):
+        if self.phase == "over":
+            self._step_players(dt)
+            return
+        if self.phase == "ready":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self.phase = "play"
+                self.events.append("whistle")
+            return
+        if self.phase == "play":
+            self.time_left -= dt
+            if self.time_left <= 0 and not self.golden:
+                self.time_left = 0
+                if self.score[0] != self.score[1]:
+                    self._end()
+                    return
+                self.golden = True
+                self.events.append("golden")
+        if self.phase == "goal":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                if self.golden or (self.time_left <= 0 and self.score[0] != self.score[1]):
+                    self._end()
+                    return
+                self._kickoff()
+                return
+
+        for p in self.players:
+            p.meter = min(100.0, p.meter + METER_PER_SEC * dt) if self.phase == "play" else p.meter
+            for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd"):
+                v = getattr(p, attr)
+                if v > 0:
+                    setattr(p, attr, max(0.0, v - dt))
+        for i in range(2):
+            if self.shield[i] > 0:
+                self.shield[i] = max(0.0, self.shield[i] - dt)
+
+        self._step_players(dt)
+        sub = 3
+        for _ in range(sub):
+            self._step_ball(dt / sub)
+        self._step_powerup(dt)
+
+    def _step_players(self, dt):
+        a, b = self.players
+        for p in self.players:
+            prev_y = p.y
+            prev_top = p.y - p.h
+            p.vy += PLAYER_G * dt
+            p.x += p.vx * dt
+            p.y += p.vy * dt
+            if abs(p.vx) > 30 and p.on_ground:
+                p.run_t += dt
+            p.on_ground = False
+            if p.y >= GROUND:
+                if p.vy > 300:
+                    self.events.append("land")
+                p.y = GROUND
+                p.vy = 0
+                p.on_ground = True
+            p.x = clamp(p.x, 28, W - 28)
+            # kale catisi: ustune basma / kafa carpmasi
+            for gx0, gy0, gx1, gy1 in self._goal_rects():
+                if gx0 - 18 < p.x < gx1 + 18:
+                    if prev_y <= gy0 + 1 and p.y >= gy0 and p.vy >= 0:
+                        p.y = gy0
+                        p.vy = 0
+                        p.on_ground = True
+                    elif prev_top >= gy1 - 1 and p.y - p.h < gy1 and p.vy < 0:
+                        p.y = gy1 + p.h
+                        p.vy = 0
+        # oyuncu - oyuncu
+        dx = b.x - a.x
+        if abs(dx) < 62 and (a.y - a.h < b.y and b.y - b.h < a.y):
+            over = 62 - abs(dx)
+            s = 1 if dx >= 0 else -1
+            a.x -= s * over / 2
+            b.x += s * over / 2
+            a.x = clamp(a.x, 28, W - 28)
+            b.x = clamp(b.x, 28, W - 28)
+
+    def _step_ball(self, dt):
+        b = self.ball
+        for i in range(2):
+            if b.hit_cd[i] > 0:
+                b.hit_cd[i] -= dt
+        if b.mode:
+            b.mode_t -= dt
+            if b.mode_t <= 0:
+                b.mode = 0
+        else:
+            b.vy += BALL_G * dt
+            b.vx *= (1 - 0.12 * dt)
+        b.x += b.vx * dt
+        b.y += b.vy * dt
+        b.ang += b.vx * dt / BALL_R
+
+        # zemin
+        if b.y + BALL_R > GROUND:
+            b.y = GROUND - BALL_R
+            if b.vy > 0:
+                if b.vy > 160:
+                    self.events.append("bounce")
+                b.vy = -b.vy * 0.68
+                if abs(b.vy) < 60:
+                    b.vy = 0
+            b.vx *= (1 - 1.1 * dt)
+            if b.mode:
+                b.mode = 0
+        # tavan
+        if b.y - BALL_R < 0:
+            b.y = BALL_R
+            b.vy = abs(b.vy) * 0.7
+        # yan duvarlar (kale icinde file yumusak)
+        for side in (0, 1):
+            wall = BALL_R if side == 0 else W - BALL_R
+            hit = b.x < wall if side == 0 else b.x > wall
+            if hit:
+                inside_goal = b.y > GOAL_TOP
+                e = 0.25 if inside_goal else 0.75
+                b.x = wall
+                b.vx = (abs(b.vx) if side == 0 else -abs(b.vx)) * e
+                if b.mode:
+                    b.mode = 0
+                if not inside_goal:
+                    self.events.append("bounce")
+        # kale catisi / ust direk
+        for r in self._goal_rects():
+            if self._rect_vs_ball(*r):
+                if b.mode:
+                    b.mode = 0
+
+        # buz kalkani
+        for i in range(2):
+            if self.shield[i] > 0 and self.phase == "play":
+                if i == 0 and b.x - BALL_R < GOAL_D + 8 and b.y > GOAL_TOP and b.vx < 0:
+                    b.x = GOAL_D + 8 + BALL_R
+                    b.vx = abs(b.vx) * 0.8
+                    b.mode = 0
+                    self.events.append("shield")
+                if i == 1 and b.x + BALL_R > W - GOAL_D - 8 and b.y > GOAL_TOP and b.vx > 0:
+                    b.x = W - GOAL_D - 8 - BALL_R
+                    b.vx = -abs(b.vx) * 0.8
+                    b.mode = 0
+                    self.events.append("shield")
+
+        # oyuncular
+        for p in self.players:
+            opp_super = b.mode and b.owner != p.idx
+            if opp_super and b.hit_cd[p.idx] <= 0:
+                hx, hy, hr = p.head()
+                bx, by, br = p.body()
+                if (math.hypot(b.x - hx, b.y - hy) < hr + BALL_R or
+                        math.hypot(b.x - bx, b.y - by) < br + BALL_R):
+                    b.hit_cd[p.idx] = 0.5
+                    if p.kick_t > 0.05 and not p.disabled:
+                        # zamanlamayla super sut karsilanir
+                        b.mode = 0
+                        b.vx = -b.vx * 0.6
+                        b.vy = -400
+                        self.events.append("block")
+                        self._touch(p)
+                    elif b.mode == 1:
+                        p.stun = 0.9
+                        p.vx = 520 * (1 if b.vx > 0 else -1)
+                        p.vy = -380
+                        p.on_ground = False
+                        self.events.append("fire_hit")
+                    else:
+                        p.frozen = 2.2
+                        self.events.append("freeze")
+                    continue
+            if b.mode and b.owner != p.idx:
+                continue
+            touched = False
+            # sut
+            if p.kick_t > 0 and not p.kick_hit and not p.disabled:
+                fx, fy, fr = p.foot()
+                if math.hypot(b.x - fx, b.y - fy) < fr + BALL_R:
+                    p.kick_hit = True
+                    pw = p.stats["kick"]
+                    high = b.y < p.y - 75
+                    if high:
+                        b.vx = p.face * 760 * pw + p.vx * 0.25
+                        b.vy = -240 * pw
+                    else:
+                        b.vx = p.face * 620 * pw + p.vx * 0.25
+                        b.vy = -560 * pw
+                    b.mode = 0
+                    self.events.append("kick")
+                    self._touch(p)
+                    continue
+            hx, hy, hr = p.head()
+            if self._circle_vs_ball(hx, hy, hr, p.vx, p.vy, 0.75):
+                touched = True
+                if p.vy < -50:
+                    b.vy += p.vy * 0.35
+                if abs(b.vx) + abs(b.vy) > 450:
+                    self.events.append("head")
+            bx, by, br = p.body()
+            if self._circle_vs_ball(bx, by, br, p.vx, p.vy, 0.45):
+                touched = True
+            if touched:
+                if self._touch(p):
+                    pass
+        # son sinir kontrolu (oyuncu topu zemine/duvara itmis olabilir)
+        if b.y + BALL_R > GROUND:
+            b.y = GROUND - BALL_R
+            if b.vy > 0:
+                b.vy = -b.vy * 0.5
+        if b.x < BALL_R:
+            b.x = BALL_R
+            b.vx = abs(b.vx) * 0.5
+        elif b.x > W - BALL_R:
+            b.x = W - BALL_R
+            b.vx = -abs(b.vx) * 0.5
+        # hiz siniri
+        sp = math.hypot(b.vx, b.vy)
+        lim = SUPER_SPEED * 1.05 if b.mode else BALL_MAX
+        if sp > lim:
+            b.vx *= lim / sp
+            b.vy *= lim / sp
+
+        # gol kontrolu
+        if self.phase == "play":
+            if b.x < GOAL_D - BALL_R * 0.6 and b.y > GOAL_TOP + 2:
+                self._goal(1)
+            elif b.x > W - GOAL_D + BALL_R * 0.6 and b.y > GOAL_TOP + 2:
+                self._goal(0)
+
+    def _step_powerup(self, dt):
+        if self.phase != "play":
+            return
+        b = self.ball
+        if self.pu is None:
+            self.pu_timer -= dt
+            if self.pu_timer <= 0:
+                kind = random.choice(PU_KINDS)
+                self.pu = [kind, random.uniform(330, W - 330), random.uniform(260, 420), 9.0]
+                self.events.append("pu_spawn")
+        else:
+            self.pu[3] -= dt
+            if self.pu[3] <= 0:
+                self.pu = None
+                self.pu_timer = random.uniform(6, 10)
+                return
+            if math.hypot(b.x - self.pu[1], b.y - self.pu[2]) < BALL_R + 32:
+                self._collect(self.pu[0])
+                self.pu = None
+                self.pu_timer = random.uniform(7, 12)
+
+    def _collect(self, kind):
+        i = self.last_touch
+        if i < 0:
+            i = 0 if self.ball.vx > 0 else 1
+        p = self.players[i]
+        o = self.players[1 - i]
+        if kind == "speed":
+            p.speed_t = 7.0
+        elif kind == "jump":
+            p.jump_t = 7.0
+        elif kind == "shield":
+            self.shield[i] = 6.0
+        elif kind == "freeze":
+            o.frozen = 2.5
+            self.events.append("freeze")
+        elif kind == "gold":
+            p.meter = 100.0
+        self.events.append("pu:%s:%d" % (kind, i))
+
+    def _goal(self, who):
+        self.goal_modes = getattr(self, "goal_modes", []) + [self.ball.mode]
+        self.score[who] += 1
+        self.scorer = who
+        self.phase = "goal"
+        self.phase_t = 2.4
+        self.events.append("goal")
+        self.ball.mode = 0
+        self.shake = 0.5
+
+    def _kickoff(self):
+        for p in self.players:
+            p.reset()
+        self.ball.reset()
+        self.shield = [0.0, 0.0]
+        self.phase = "ready"
+        self.phase_t = 1.4
+        self.last_touch = -1
+        self.scorer = -1
+
+    def _end(self):
+        self.phase = "over"
+        if self.score[0] > self.score[1]:
+            self.winner = 0
+        elif self.score[1] > self.score[0]:
+            self.winner = 1
+        else:
+            self.winner = 2
+        self.events.append("end")
+        for p in self.players:
+            p.frozen = p.stun = 0
+
+    # ------------------------------------------------------------ snapshot
+    def snapshot(self):
+        b = self.ball
+        ps = []
+        for p in self.players:
+            ps.append([round(p.x, 1), round(p.y, 1), round(p.vx), p.face, round(p.kick_t, 2),
+                       round(p.frozen, 2), round(p.meter, 1), round(p.armed, 2), 1 if p.on_ground else 0,
+                       p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2)])
+        ev = self.events
+        self.events = []
+        shk, self.shake = self.shake, 0.0
+        return {
+            "ph": self.phase, "pt": round(self.phase_t, 2), "tm": round(self.time_left, 2),
+            "gg": 1 if self.golden else 0, "sc": list(self.score), "win": self.winner,
+            "b": [round(b.x, 1), round(b.y, 1), round(b.ang, 2), b.mode, round(b.vx), round(b.vy)],
+            "p": ps,
+            "pu": None if self.pu is None else [self.pu[0], round(self.pu[1]), round(self.pu[2]), round(self.pu[3], 1)],
+            "sh": [round(self.shield[0], 1), round(self.shield[1], 1)],
+            "scr": self.scorer, "ev": ev, "shk": round(shk, 2),
+        }
+
+
+# ---------------------------------------------------------------- bot
+class Bot:
+    """Basit ama oynanabilir yapay zeka."""
+
+    def __init__(self, idx, level=1):
+        self.idx = idx
+        self.level = level  # 0 kolay, 1 normal, 2 zor
+        self.react = [0.22, 0.12, 0.05][level]
+        self.err = [70, 35, 12][level]
+        self.t = 0.0
+        self.offset = 0.0
+        self.jump_hold = 0
+
+    def think(self, w, dt):
+        p = w.players[self.idx]
+        b = w.ball
+        self.t -= dt
+        if self.t <= 0:
+            self.t = self.react
+            self.offset = random.uniform(-self.err, self.err) * 0.5
+        d = p.dir
+        own_goal_x = 0 if self.idx == 0 else W
+        # topun kisa sure sonraki konumunu tahmin et
+        look = 0.18 + 0.1 * self.level
+        px = clamp(b.x + b.vx * look, 40, W - 40)
+        # topun arkasina gec (kendi kale tarafi)
+        target = px - d * (38 + self.offset)
+        ball_behind = (b.x - p.x) * d < -10
+        danger = abs(b.x - own_goal_x) < 420
+        if ball_behind and danger:
+            target = px - d * 55
+        coming = b.vx * d < -250 and (b.x - own_goal_x) * d < 640
+        if coming and not ball_behind:
+            # geri cekil, top ile kale arasinda kal
+            target = min(px, p.x) if d == 1 else max(px, p.x)
+            target = clamp(target - d * 60, GOAL_D + 20, W - GOAL_D - 20)
+        if b.mode and b.owner != self.idx:
+            # super sut geliyor: ziplayarak kacmaya/karsilamaya calis
+            target = p.x
+        left = target < p.x - 12
+        right = target > p.x + 12
+        dx = b.x - p.x
+        dist = math.hypot(dx, b.y - (p.y - p.h * 0.6))
+        jump = False
+        if abs(dx) < 110 and b.y < p.y - p.h * 0.75 and b.vy > -250 and b.y > p.y - p.h - 190:
+            jump = random.random() < 0.35 + 0.25 * self.level
+        if b.mode and b.owner != self.idx and abs(dx) < 260:
+            jump = random.random() < 0.15 * (self.level + 1)
+        kick = False
+        if dist < 95 and dx * d > -5:
+            kick = random.random() < 0.25 + 0.2 * self.level
+        if b.mode and b.owner != self.idx and abs(dx) < 120 and self.level >= 1:
+            kick = random.random() < 0.3 * self.level
+        sup = p.meter >= 100 and dist < 140 and dx * d > 0
+        return left, right, jump, kick, sup
