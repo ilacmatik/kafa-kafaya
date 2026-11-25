@@ -18,6 +18,8 @@ jobs:
           python-version: "3.12"
       - name: Paketleri kur
         run: python -m pip install -r requirements.txt
+      - name: Surum numarasi
+        run: echo surum-${{ github.run_number }} > assets/version.txt
       - name: Duman testi (gercek pygame)
         run: python ci_smoke.py
       - name: EXE olustur

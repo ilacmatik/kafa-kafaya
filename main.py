@@ -85,6 +85,13 @@ def res(*parts):
     return os.path.join(base, *parts)
 
 
+try:
+    with open(res("assets", "version.txt"), encoding="utf-8") as _vf:
+        VERSION_TEXT = _vf.read().strip().replace("surum-", "Sürüm ")
+except OSError:
+    VERSION_TEXT = "Sürüm geliştirme"
+
+
 # ====================================================================== yazi
 _fonts = {}
 _tcache = {}
@@ -848,6 +855,8 @@ class MenuScene(Scene):
         self.list.draw(s, 1 / FPS)
         draw_text(s, "F11: tam ekran   ·   M: ses   ·   P: gizle", 17, (W // 2, H - 16), (200, 210, 230),
                   outline=2, title=False)
+        draw_text(s, VERSION_TEXT, 15, (W - 12, H - 14), (170, 185, 215), anchor="midright", outline=2,
+                  title=False)
 
 
 class HelpScene(Scene):
