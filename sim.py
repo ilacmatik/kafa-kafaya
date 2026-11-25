@@ -176,11 +176,7 @@ class World:
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         jmul = 1.28 if p.jump_t > 0 else 1.0
-        if kick_held is not None and p.charging and kick_held:
-            # sut tusu basiliyken yukari: ziplama yerine asirtma sutu hazirla
-            if jump:
-                p.lob = True
-            jump = jump_edge = False
+        p.lob = bool(jump)   # yukari tusu basili mi (asirtma karari temas aninda verilir)
         if jump and p.on_ground:
             p.vy = -p.stats["jump"] * jmul
             p.on_ground = False
@@ -249,8 +245,7 @@ class World:
     def _swing(self, p, charge):
         p.kick_t = 0.24
         p.kick_hit = False
-        p.lob_shot = p.lob
-        p.lob = False
+        p.lob_shot = False
         # 0.12 sn'den kisa basis normal sut; tam sarj %45 daha guclu
         p.kick_power = 1.0 + 0.45 * max(0.0, (charge - 0.15) / 0.85)
         self.events.append("swing")
@@ -344,8 +339,8 @@ class World:
             ang, kind = 16.0, "volley"   # havadaki top: vole
         spin = 0.1
         mv = p.move * p.dir
-        if p.lob_shot:
-            p.lob_shot = False
+        if p.lob and h < 90:
+            # temas aninda yukari basiliysa: asirtma (ziplama aynen calisir)
             ang, q, spin, kind = 64.0, q * 1.0, -0.8, "lob"
         elif mv < 0:
             ang, q, spin, kind = 66.0, q * 0.9, -0.9, "lob"            # geri giderken: yuksek asirtma
