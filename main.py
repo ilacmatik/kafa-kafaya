@@ -801,6 +801,18 @@ class Assets:
         logo = L("logo.png")
         self.logo = self._fit(logo, 540)
         self.logo_small = self._fit(logo, 300)
+        self.pm_bg = gfx.from_surface(pygame.image.load(res("assets", "pm_bg.jpg")).convert(), (W, H))
+        self.pm_bar = gfx.from_surface(L("pm_bar.png"), (800, 56))
+        self.pm_icons = {}
+        self.pm_icons_big = {}
+        for n in ("host", "join", "bot", "cup", "2p", "keys", "exit"):
+            raw = L("pm_ic_%s.png" % n)
+            self.pm_icons[n] = self._fit(raw, 64)
+            self.pm_icons_big[n] = self._fit(raw, 112)
+        self.pm_heroes = []
+        for i in range(6):
+            raw = L("pm_hero%d.png" % i)
+            self.pm_heroes.append(gfx.from_surface(raw, (raw.get_width() * 340 / raw.get_height(), 340)))
         self.hero = []
         for i in range(6):
             src = L("p%d_celeb.png" % i) if os.path.exists(res("assets", "p%d_celeb.png" % i)) else L("p%d_idle.png" % i)
@@ -1066,60 +1078,141 @@ def menu_backdrop(s, t, dark=True, sparkles=None):
         sparkles.draw(s, t)
 
 
+MENU_ITEMS = [
+    ("host", "MAÇ KUR", "Aynı ağdaki arkadaşın için maç kur, o sana bağlansın."),
+    ("join", "MAÇA KATIL", "Ağda kurulmuş bir maçı bul ve katıl."),
+    ("bot", "BİLGİSAYARA KARŞI", "Bilgisayara karşı tek maç oyna. Zorluğu sen seç."),
+    ("cup", "TURNUVA", "5 maçlık kupa yolunu tamamla, kupayı kaldır."),
+    ("2p", "TEK PC 2 KİŞİ", "Aynı klavyede iki kişi karşı karşıya oyna."),
+    ("keys", "KONTROLLER", "Tuşlar, özel hareketler ve süper güçler."),
+    ("exit", "ÇIKIŞ", "Oyundan çık."),
+]
+
+
 class MenuScene(Scene):
+    """PES tarzi ana menu: ortada karakter, altta ikonlu serit."""
+
     def __init__(self, app):
         super().__init__(app)
-        a = app
-        x, bw, bh = W // 2 - 210, 420, 60
-        mk = lambda i, txt, cb, ic: Button((x, 238 + i * 63, bw, 54), txt, cb, ic)
-        self.list = ButtonList([
-            mk(0, "MAÇ KUR", lambda: a.go(HostWaitScene(a)), "host"),
-            mk(1, "MAÇA KATIL", lambda: a.go(JoinScene(a)), "join"),
-            mk(2, "BİLGİSAYARA KARŞI", lambda: a.go(SelectScene(a, "bot")), "bot"),
-            mk(3, "TURNUVA", lambda: a.go(SelectScene(a, "cup")), "cup"),
-            mk(4, "TEK PC 2 KİŞİ", lambda: a.go(SelectScene(a, "local2")), "2p"),
-            mk(5, "KONTROLLER", lambda: a.go(HelpScene(a)), "keys"),
-            mk(6, "ÇIKIŞ", a.quit, "exit"),
-        ])
+        self.sel = 0
         self.t = 0
-        self.spark = Sparkles(50)
-        self.heroes = random.sample(range(6), 2)
-        self.cheer = [0.0, 0.0]
+        self.hero = random.randrange(6)
+        self.hero_t = 0.0
+        self.prev_hero = None
+        self.spark = Sparkles(30)
+        self.pick_t = 0.0
+        self.slots = [pygame.Rect(318 + k * 124 - 50, 492, 100, 92) for k in range(len(MENU_ITEMS))]
+
+    def _go(self):
+        a = self.app
+        key = MENU_ITEMS[self.sel][0]
+        a.sound.play("kick")
+        if key == "host":
+            a.go(HostWaitScene(a))
+        elif key == "join":
+            a.go(JoinScene(a))
+        elif key == "bot":
+            a.go(SelectScene(a, "bot"))
+        elif key == "cup":
+            a.go(SelectScene(a, "cup"))
+        elif key == "2p":
+            a.go(SelectScene(a, "local2"))
+        elif key == "keys":
+            a.go(HelpScene(a))
+        else:
+            a.quit()
+
+    def _move(self, d):
+        self.sel = (self.sel + d) % len(MENU_ITEMS)
+        self.pick_t = 0.0
+        self.app.sound.play("click")
 
     def handle(self, e):
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-            self.app.quit()
-            return
-        self.list.handle(e, self.app)
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_ESCAPE:
+                self.app.quit()
+            elif e.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN, pygame.K_s, pygame.K_TAB):
+                self._move(1)
+            elif e.key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP, pygame.K_w):
+                self._move(-1)
+            elif e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                self._go()
+        elif e.type == pygame.MOUSEMOTION:
+            for k, r in enumerate(self.slots):
+                if r.collidepoint(e.pos) and k != self.sel:
+                    self.sel = k
+                    self.pick_t = 0.0
+                    self.app.sound.play("click")
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            for k, r in enumerate(self.slots):
+                if r.collidepoint(e.pos):
+                    self.sel = k
+                    self._go()
 
     def update(self, dt):
         self.t += dt
+        self.pick_t += dt
+        self.hero_t += dt
         self.spark.update(dt)
-        for i in range(2):
-            self.cheer[i] -= dt
-            if self.cheer[i] < -random.uniform(3, 6):
-                self.cheer[i] = 1.2
+        if self.hero_t > 4.5:
+            self.prev_hero = self.hero
+            self.hero = (self.hero + 1 + random.randrange(5)) % 6
+            self.hero_t = 0.0
 
     def draw(self, s):
         A = self.app.assets
-        menu_backdrop(s, self.t, dark=False, sparkles=self.spark)
-        for side, ci in enumerate(self.heroes):
-            idle, celeb = A.hero[ci]
-            img = celeb if self.cheer[side] > 0 else idle
-            hop = abs(math.sin(self.t * 9)) * 14 if self.cheer[side] > 0 else math.sin(self.t * 2.5 + side) * 3
-            if side == 1:
-                img = A.flipped(img)
-            cx = 205 if side == 0 else W - 205
-            fx.blit_glow(s, cx, 650, 150, (30, 45, 80))
-            sh = A.shadow(70)
-            s.blit(sh, sh.get_rect(center=(cx, 668)))
-            s.blit(img, img.get_rect(midbottom=(cx, 672 - hop)))
-        draw_title(s, 128, self.t)
-        self.list.draw(s, 1 / FPS)
-        draw_text(s, "F11: tam ekran   ·   M: ses   ·   P: gizle", 17, (W // 2, H - 16), (200, 210, 230),
-                  outline=2, title=False)
-        draw_text(s, VERSION_TEXT, 15, (W - 12, H - 14), (170, 185, 215), anchor="midright", outline=2,
-                  title=False)
+        s.blit(A.pm_bg, (0, 0))
+        # isik huzmesi ve parilti
+        fx.blit_glow(s, 640, 250, 210 + 10 * math.sin(self.t * 1.7), (20, 45, 90))
+        self.spark.draw(s, self.t)
+        # karakter: sagdan kayarak gelir
+        k = min(1.0, self.hero_t / 0.45)
+        ease = 1 - (1 - k) ** 3
+        if self.prev_hero is not None and k < 1:
+            old = A.pm_heroes[self.prev_hero]
+            old.set_alpha(int(255 * (1 - k)))
+            s.blit(old, old.get_rect(midbottom=(640 - 160 * ease, 436)))
+            old.set_alpha(255)
+        hero = A.pm_heroes[self.hero]
+        bob = math.sin(self.t * 2) * 4
+        hero.set_alpha(int(255 * k))
+        s.blit(hero, hero.get_rect(midbottom=(640 + 180 * (1 - ease), 436 + bob)))
+        hero.set_alpha(255)
+        draw_text(s, sim.DISPLAY_NAMES[self.hero], 20, (640 + 180 * (1 - ease), 112), GOLD, outline=3)
+        # logo
+        lg = A.logo_small
+        s.blit(lg, lg.get_rect(topleft=(24, 12)))
+        # alt serit: secili oge buyuk
+        key, title, desc = MENU_ITEMS[self.sel]
+        big = A.pm_icons_big[key]
+        pop = 1 + 0.12 * max(0.0, 1 - self.pick_t * 5)
+        bimg = tf.rotozoom(big, 0, pop) if pop > 1.001 else big
+        fx.blit_glow(s, 196, 505, 80, (25, 60, 110))
+        s.blit(bimg, bimg.get_rect(center=(196, 508)))
+        draw_text(s, title, 40, (286, 452), WHITE, anchor="midleft", outline=4)
+        gd.line(s, (200, 170, 80), (286, 478), (1180, 478), 2)
+        # ikon sirasi
+        for n, (k2, t2, _) in enumerate(MENU_ITEMS):
+            r = self.slots[n]
+            cx, cy = r.centerx, r.y + 34
+            ic = A.pm_icons[k2]
+            if n == self.sel:
+                fx.blit_glow(s, cx, cy, 52 + 4 * math.sin(self.t * 6), (30, 80, 140))
+                ic2 = tf.rotozoom(ic, 0, 1.14)
+                s.blit(ic2, ic2.get_rect(center=(cx, cy - 2)))
+                draw_text(s, t2, 13, (cx, cy + 46), GOLD, outline=2)
+            else:
+                ic.set_alpha(150)
+                s.blit(ic, ic.get_rect(center=(cx, cy)))
+                ic.set_alpha(255)
+                draw_text(s, t2, 12, (cx, cy + 44), (170, 190, 225), outline=2, title=False)
+        # aciklama plakasi
+        bar = A.pm_bar
+        s.blit(bar, (118, 606))
+        draw_text(s, desc, 19, (168, 634), WHITE, anchor="midleft", outline=2, title=False)
+        draw_text(s, "←/→ seç   ·   ENTER onayla   ·   F11 tam ekran   ·   M ses   ·   P gizle", 15,
+                  (W // 2, 694), (180, 195, 225), outline=2, title=False)
+        draw_text(s, VERSION_TEXT, 14, (W - 12, 12), (170, 185, 215), anchor="topright", outline=2, title=False)
 
 
 class HelpScene(Scene):
