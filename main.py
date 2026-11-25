@@ -2494,7 +2494,7 @@ class MatchScene(Scene, OnlineMixin):
                                                random.choice(["fx_str_red", "fx_str_gold", "fx_str_blue",
                                                               "fx_str_white", "fx_star"]),
                                                random.uniform(22, 34), 40, "img"))
-                self.floaters.append([msg, W // 2, 292, 2.2, P_COLORS[who]])
+                self.floaters.append([msg, W // 2, 240, 2.2, P_COLORS[who]])
                 self.shake = 0.5
                 self.ripple = [1 if who == 0 else 0, by, 0.0]
                 self.goal_flash = 0.35
@@ -2888,10 +2888,10 @@ class MatchScene(Scene, OnlineMixin):
         screen.fill((0, 0, 0))
         screen.blit(s, (ox, oy))
         for txt, x, y, life, col in self.floaters:
-            draw_text(screen, txt, 30, (x, y), col, outline=4, alpha=int(255 * min(1, life * 2)))
+            draw_text(screen, txt, 20, (x, y), col, outline=3, alpha=int(255 * min(1, life * 2)))
         if self.banner:
             txt, col, t, mx = self.banner
-            draw_text(screen, txt, 84, (W // 2, 330), col, outline=7, alpha=int(255 * min(1, t * 3)))
+            draw_text(screen, txt, 60, (W // 2, 300), col, outline=7, alpha=int(255 * min(1, t * 3)))
 
     def draw(self, screen):
         A = self.app.assets
@@ -3595,19 +3595,21 @@ class MatchScene(Scene, OnlineMixin):
         self._draw_series(s, snap)
         self._draw_pens(s, snap)
         for txt, x, y, life, col in self.floaters:
-            draw_text(s, txt, 30, (x, y), col, outline=4, alpha=int(255 * min(1, life * 2)))
+            draw_text(s, txt, 20, (x, y), col, outline=3, alpha=int(255 * min(1, life * 2)))
         if self.banner:
             txt, col, t, mx = self.banner
             k = 1 - t / mx
             scale = 1 + 0.35 * max(0, 1 - k * 6)
-            size = int(96 * scale) if txt == "GOOOL!" else int(72 * scale)
+            size = int(80 * scale) if txt == "GOOOL!" else int(52 * scale)
             draw_text(s, txt, size, (W // 2, 200), col, outline=7, alpha=int(255 * min(1, t * 3)))
         if self.goal_line:
             txt, life, col = self.goal_line
             k = min(1.0, (2.6 - life) * 4)
             wob = math.sin(self.t * 10) * 2 if life > 0.5 else 0
-            panel(s, (W // 2 - 360, 330 + wob, 720, 62), (10, 12, 28, int(200 * min(1, life * 2))), 20, col, 4)
-            draw_text(s, txt, int(30 + 6 * (1 - k)), (W // 2, 361 + wob), WHITE, outline=4,
+            fs = int(20 + 3 * (1 - k))
+            tw = text_surf(txt, fs, WHITE, 3, title=True).get_width() + 36
+            panel(s, (W // 2 - tw // 2, 262 + wob, tw, 38), (10, 12, 28, int(190 * min(1, life * 2))), 14, col, 3)
+            draw_text(s, txt, fs, (W // 2, 281 + wob), WHITE, outline=3,
                       alpha=int(255 * min(1, life * 2)))
         if snap["ph"] == "ready" and snap["pt"] > 0 and self.banner is None:
             draw_text(s, str(int(math.ceil(snap["pt"]))), 80, (W // 2, 180), WHITE, outline=6)
