@@ -378,8 +378,11 @@ class Assets:
         def scaled(raw, f):
             return S(raw, raw.get_width() * f, raw.get_height() * f)
 
-        self.stadium = gfx.from_surface(pygame.image.load(res("assets", "stadium_clean.jpg")).convert(), (W, H))
-        self.vignette = gfx.Img(fx.make_vignette(int(W * gfx.K), int(H * gfx.K)))
+        st = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_clean.jpg")).convert(),
+                                          (int(W * gfx.K), int(H * gfx.K)))
+        st.blit(fx.make_vignette(st.get_width(), st.get_height(), 80), (0, 0))  # vinyet arka plana gomulu
+        self.stadium = gfx.Img(st)
+        self._shadow = {}
         GD, GH = sim.GOAL_D, sim.GROUND - sim.GOAL_TOP
         k = gfx.K
         sh = pygame.Surface((int(GD * k), int(GH * k)), pygame.SRCALPHA)
@@ -459,6 +462,15 @@ class Assets:
         s.fill((150, 200, 255, 255), special_flags=pygame.BLEND_RGBA_MULT)
         s.fill((40, 70, 110, 0), special_flags=pygame.BLEND_RGBA_ADD)
         return gfx.Img(s)
+
+    def shadow(self, r):
+        r = max(2, int(r) // 2 * 2)
+        s = self._shadow.get(r)
+        if s is None:
+            d = fx.soft_dot(r, (0, 0, 0))
+            s = tf.smoothscale(d, (d.get_width(), max(4, int(d.get_height() * 0.28))))
+            self._shadow[r] = s
+        return s
 
     def flipped(self, img):
         key = id(img)
@@ -1582,8 +1594,7 @@ class MatchScene(Scene, OnlineMixin):
         for x, y, wdt in [(p[0], p[1], 70) for p in snap["p"]] + [(b[0], b[1], 44)]:
             hgt = max(0.0, sim.GROUND - y)
             k = max(0.25, 1 - hgt / 420)
-            sh = fx.soft_dot(int(wdt * k / 2) + 2, (0, 0, 0))
-            sh = tf.smoothscale(sh, (sh.get_width(), max(4, int(sh.get_height() * 0.28))))
+            sh = A.shadow(int(wdt * k / 2) + 2)
             sh.set_alpha(int(150 * k))
             s.blit(sh, sh.get_rect(center=(x, sim.GROUND + 3)))
             sh.set_alpha(255)
@@ -1619,7 +1630,6 @@ class MatchScene(Scene, OnlineMixin):
         if self.goal_flash > 0:
             v = int(110 * self.goal_flash / 0.35)
             s.add_full((v, v, int(v * 0.8)))
-        s.blit(A.vignette, (0, 0))
         self._draw_hud(s, snap)
         ox = oy = 0
         if self.shake > 0:

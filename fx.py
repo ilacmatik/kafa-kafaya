@@ -218,6 +218,19 @@ class Crowd:
     def draw(self, target):
         L = self.layer
         k = self.k
+        ex = self.excite
+        self._tick = getattr(self, "_tick", 0) + 1
+        if self._tick % 2 == 1:
+            self._draw_fans()
+        if isinstance(target, gfx.Canvas):
+            target.surf.blit(L, (0, int(self.oy * k)))
+        else:
+            target.blit(L, (0, self.oy))
+        self._draw_extras(target, ex)
+
+    def _draw_fans(self):
+        L = self.layer
+        k = self.k
         L.fill((0, 0, 0, 0))
         t = self.t
         ex = self.excite
@@ -238,10 +251,9 @@ class Crowd:
             img = self._sprite(key, pose)
             L.blit(img, (int(x * k - img.get_width() / 2), int((y - jump) * k - img.get_height())))
         L.blit(self.mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        if isinstance(target, gfx.Canvas):
-            target.surf.blit(L, (0, int(self.oy * k)))
-        else:
-            target.blit(L, (0, self.oy))
+
+    def _draw_extras(self, target, ex):
+        t = self.t
         # bayraklar (tribunun ustune tasar)
         for fl in self.flags:
             px, py, col, ph, sc, d = fl
