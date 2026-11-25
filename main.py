@@ -49,7 +49,7 @@ STADIUMS = [
 ]
 ADS = [("ULUDAĞ GAZOZ", (255, 214, 60)), ("MATLI", (255, 120, 90)), ("TURKCELL", (255, 205, 40)),
        ("ÖZDİLEK", (255, 255, 255)), ("KÖFTECİ YUSUF", (255, 90, 80))]
-PODIUMS = [158, 352, 545, 735, 927, 1122]   # karakter secim podyumlari (x)
+PODIUMS = [147, 344, 541, 738, 936, 1133]   # karakter secim podyumlari (x)
 
 GOLD = (255, 205, 60)
 WHITE = (255, 255, 255)
@@ -813,6 +813,12 @@ class Assets:
         for i in range(6):
             raw = L("pm_hero%d.png" % i)
             self.pm_heroes.append(gfx.from_surface(raw, (raw.get_width() * 340 / raw.get_height(), 340)))
+        self.sel_bg = gfx.from_surface(pygame.image.load(res("assets", "sel_bg.jpg")).convert(), (W, H))
+        self.sel_heroes = []
+        for i in range(6):
+            raw = L("sel_hero%d.png" % i)
+            hh = 236 * sim.CHARACTERS[i]["scale"]
+            self.sel_heroes.append(gfx.from_surface(raw, (raw.get_width() * hh / raw.get_height(), hh)))
         self.hero = []
         for i in range(6):
             src = L("p%d_celeb.png" % i) if os.path.exists(res("assets", "p%d_celeb.png" % i)) else L("p%d_idle.png" % i)
@@ -1518,12 +1524,12 @@ class SelectScene(Scene, OnlineMixin):
             if mode == "host":
                 self.conn.send({"t": "stad", "s": app.stadium})
                 self.conn.send({"t": "wx", "w": app.weather})
-        self.cards = [pygame.Rect(cx - 85, 300, 170, 270) for cx in PODIUMS]
+        self.cards = [pygame.Rect(cx - 90, 350, 180, 300) for cx in PODIUMS]
         self.anim = [[-1, 0.0], [-1, 0.0]]
-        self.stad_rect = pygame.Rect(0, 0, 250, 28)
-        self.stad_rect.center = (W // 2, 247)
-        self.wx_rect = pygame.Rect(0, 0, 210, 26)
-        self.wx_rect.center = (W // 2, 278)
+        self.stad_rect = pygame.Rect(0, 0, 230, 26)
+        self.stad_rect.center = (W // 2, 262)
+        self.wx_rect = pygame.Rect(0, 0, 200, 24)
+        self.wx_rect.center = (W // 2, 291)
 
     def _send_pick(self):
         if self.conn:
@@ -1675,43 +1681,40 @@ class SelectScene(Scene, OnlineMixin):
 
     def draw(self, s):
         A = self.app.assets
-        s.blit(A.select_bg, (0, 0))
+        s.blit(A.sel_bg, (0, 0))
         labels = {"bot": ("SEN", "BİLGİSAYAR"), "local2": ("1. OYUNCU", "2. OYUNCU"),
                   "host": ("SEN", "RAKİP"), "client": ("RAKİP", "SEN"), "cup": ("SEN", "RAKİPLER")}[self.mode]
-        draw_text(s, "KARAKTERİNİ SEÇ", 44, (W // 2, 42), GOLD, outline=5)
-        # oyuncu bilgi panelleri
+        # ust bilgi panelleri (arka plandaki petek panellerin icine)
         for who in (0, 1):
             c = self.pick[who]
-            px = 28 if who == 0 else W - 28 - 430
-            r = pygame.Rect(px, 82, 430, 190)
-            frame(s, r)
+            left = who == 0
+            pc = (118, 124) if left else (W - 118, 124)
             por = A.portrait_big[c]
-            if who == 1:
+            if not left:
                 por = A.flipped(por)
-            pc = (r.x + 78, r.y + 98) if who == 0 else (r.right - 78, r.y + 98)
-            fx.blit_glow(s, pc[0], pc[1], 70, tuple(v // 4 for v in P_COLORS[who]))
-            gd.circle(s, P_COLORS[who], pc, 58)
-            gd.circle(s, (12, 18, 40), pc, 52)
+            fx.blit_glow(s, pc[0], pc[1], 74, tuple(v // 4 for v in P_COLORS[who]))
+            gd.circle(s, (8, 12, 30), pc, 60)
+            gd.circle(s, P_COLORS[who], pc, 57)
+            gd.circle(s, (14, 22, 50), pc, 52)
             s.blit(por, por.get_rect(center=(pc[0], pc[1] + 4)))
-            gd.circle(s, GOLD, pc, 58, 3)
-            tx = r.x + 150 if who == 0 else r.x + 26
-            draw_text(s, sim.DISPLAY_NAMES[c], 34, (tx - 2, r.y + 44), WHITE, anchor="midleft", outline=4)
+            gd.circle(s, (140, 210, 255), pc, 57, 2)
+            tx = 196 if left else 800
+            draw_text(s, sim.DISPLAY_NAMES[c], 30, (tx, 66), WHITE, anchor="midleft", outline=4)
             if self.anim[who][0] != c:
                 self.anim[who] = [c, 0.0]
             prog = self.anim[who][1]
             for j, (lab, val) in enumerate(zip(("HIZ", "ZIPLAMA", "ŞUT"), sim.STAT_BARS[c])):
-                y = r.y + 84 + j * 25
+                y = 104 + j * 25
                 ic = A.stat_icons[j]
                 s.blit(ic, ic.get_rect(center=(tx + 12, y)))
                 draw_text(s, lab, 14, (tx + 30, y), (205, 218, 245), anchor="midleft", outline=2)
                 for k in range(5):
                     on = k < val and prog * 10 > j * 2 + k
-                    stat_seg(s, tx + 114 + k * 27, y, on, val >= 5, self.t + k * 0.15)
+                    stat_seg(s, tx + 116 + k * 27, y, on, val >= 5, self.t + k * 0.15)
             pw = sim.CHARACTERS[c]["power"]
             ic = A.power_icon[pw]
-            s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
-            draw_text(s, POWERS[pw][0], 19, (tx + 30, r.y + 161), POWERS[pw][1], anchor="midleft", outline=3)
-            # durum etiketi
+            s.blit(ic, ic.get_rect(center=(tx + 12, 184)))
+            draw_text(s, POWERS[pw][0], 18, (tx + 30, 183), POWERS[pw][1], anchor="midleft", outline=3)
             if self.mode == "cup" and who == 1:
                 st, tcol = "5 MAÇLIK KUPA YOLU", (150, 110, 20)
             elif self.mode == "bot" and who == 1:
@@ -1721,26 +1724,25 @@ class SelectScene(Scene, OnlineMixin):
             else:
                 dots = "." * (int(self.t * 2) % 4)
                 st, tcol = "SEÇİYOR" + dots, _shade(P_COLORS[who], 0.85)
-            tag = pygame.Rect(0, 0, 270, 38)
-            tag.center = (r.centerx, r.bottom + 2)
+            tag = pygame.Rect(0, 0, 270, 34)
+            tag.center = (277 if left else W - 277, 238)
             pill(s, tag, tcol)
-            lab = labels[who]
-            draw_text(s, "%s  ·  %s" % (lab, st), 17, (tag.centerx, tag.centery - 1), WHITE, outline=2)
-        # VS ve ayarlar
-        vs_bob = math.sin(self.t * 3) * 4
-        fx.blit_glow(s, W // 2, 160, 90, (70, 50, 10))
-        draw_text(s, "VS", 78, (W // 2, 160 + vs_bob), GOLD, outline=6)
-        draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 17,
-                  (W // 2, 220), (215, 225, 245), outline=2, title=False)
+            draw_text(s, "%s  ·  %s" % (labels[who], st), 16, (tag.centerx, tag.centery - 1), WHITE, outline=2)
+        # orta amblem: VS + ayarlar
+        vs_bob = math.sin(self.t * 3) * 3
+        fx.blit_glow(s, W // 2, 124, 80, (40, 70, 120))
+        draw_text(s, "VS", 64, (W // 2, 120 + vs_bob), GOLD, outline=6)
+        draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 15,
+                  (W // 2, 236), (215, 225, 245), outline=2, title=False)
         stp = self.stad_rect
         pill(s, stp, (30, 120, 60) if self.app.stadium == 1 else (40, 60, 130), radius=12)
-        draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 15,
+        draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 14,
                   (stp.centerx, stp.centery - 1), WHITE, outline=2)
         wxr = self.wx_rect
         wcol = {"clear": (200, 140, 30), "rain": (50, 90, 160), "snow": (120, 150, 190), "wind": (60, 140, 150),
                 "random": (110, 70, 160)}[WEATHERS[self.app.weather][0]]
         pill(s, wxr, wcol, radius=11)
-        draw_text(s, WEATHERS[self.app.weather][1] + ("  (H)" if self.mode != "client" else ""), 14,
+        draw_text(s, WEATHERS[self.app.weather][1] + ("  (H)" if self.mode != "client" else ""), 13,
                   (wxr.centerx, wxr.centery - 1), WHITE, outline=2)
         # podyumlar ve karakterler
         for i, cx in enumerate(PODIUMS):
@@ -1748,40 +1750,38 @@ class SelectScene(Scene, OnlineMixin):
             ready = (sel0 and self.ready[0]) or (sel1 and self.ready[1])
             if sel0 or sel1:
                 col = P_COLORS[0] if sel0 else P_COLORS[1]
-                fx.blit_glow(s, cx, 545, 105 + 6 * math.sin(self.t * 5), tuple(v // 3 for v in col))
-                gd.ellipse(s, col, (cx - 74, 532, 148, 26), 4)
+                fx.blit_glow(s, cx, 596, 120 + 8 * math.sin(self.t * 5), tuple(v // 3 for v in col))
+                gd.ellipse(s, col, (cx - 82, 586, 164, 22), 4)
                 if sel0 and sel1:
-                    gd.ellipse(s, P_COLORS[1], (cx - 64, 535, 128, 20), 3)
-            img = A.big_celeb[i] if ready else A.big[i]
+                    gd.ellipse(s, P_COLORS[1], (cx - 70, 589, 140, 16), 3)
+            img = A.sel_heroes[i]
             bob = abs(math.sin(self.t * 8 + i)) * 10 if ready else (math.sin(self.t * 3 + i) * 2 if (sel0 or sel1) else 0)
             if not (sel0 or sel1):
-                img.set_alpha(185)
-            s.blit(img, img.get_rect(midbottom=(cx, 548 - bob)))
+                img.set_alpha(170)
+            s.blit(img, img.get_rect(midbottom=(cx, 602 - bob)))
             img.set_alpha(255)
-            draw_text(s, sim.DISPLAY_NAMES[i], 21, (cx, 590), GOLD if (sel0 or sel1) else WHITE, outline=3)
-            # secim oklari
+            draw_text(s, sim.DISPLAY_NAMES[i], 19, (cx, 664), GOLD if (sel0 or sel1) else WHITE, outline=3)
             tags = [(0, labels[0])] if sel0 else []
             if sel1:
                 tags.append((1, labels[1]))
             for n, (who, lab) in enumerate(tags):
-                ty = 314 - n * 34 + math.sin(self.t * 5) * 3
-                tag = pygame.Rect(0, 0, 124, 28)
+                ty = 342 - n * 32 + math.sin(self.t * 5) * 3
+                tag = pygame.Rect(0, 0, 120, 26)
                 tag.center = (cx, ty)
-                gd.polygon(s, (12, 14, 34), [(cx - 10, tag.bottom - 2), (cx + 10, tag.bottom - 2), (cx, tag.bottom + 11)])
-                gd.polygon(s, P_COLORS[who], [(cx - 7, tag.bottom - 2), (cx + 7, tag.bottom - 2), (cx, tag.bottom + 7)])
+                gd.polygon(s, (12, 14, 34), [(cx - 10, tag.bottom - 2), (cx + 10, tag.bottom - 2), (cx, tag.bottom + 10)])
+                gd.polygon(s, P_COLORS[who], [(cx - 7, tag.bottom - 2), (cx + 7, tag.bottom - 2), (cx, tag.bottom + 6)])
                 pill(s, tag, P_COLORS[who], radius=11)
-                draw_text(s, lab, 15, (tag.centerx, tag.centery - 1), WHITE, outline=2)
+                draw_text(s, lab, 14, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         if self.mode == "local2":
             hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum  ·  H hava"
         elif self.mode == "bot":
             hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum · H hava"
+        elif self.mode == "cup":
+            hint = "←/→ karakterini seç · ENTER başla"
         else:
             hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else
                                              " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
-        panel(s, (W // 2 - 420, 640, 840, 64), (8, 12, 28, 190), 18)
-        draw_text(s, hint, 19, (W // 2, 660), (225, 232, 250), outline=2, title=False)
-        draw_text(s, "Fare ile karaktere tıklayarak da seçebilirsin   ·   ESC: geri", 15, (W // 2, 688),
-                  (170, 185, 215), outline=2, title=False)
+        draw_text(s, hint + "   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
 
 
 # ====================================================================== mac
