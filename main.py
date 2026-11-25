@@ -248,40 +248,54 @@ def draw_meter(surf, rect, frac, color, right=False, glow=False):
 _segs = {}
 
 
-def stat_seg(surf, x, y, on, maxed, t):
-    """Egik, parlak ozellik segmenti."""
-    key = (on, maxed)
+def seg_img(name, h):
+    """Gemini segment gorseli, h mantiksal yukseklikte."""
+    key = (name, h)
     img = _segs.get(key)
     if img is None:
-        k = gfx.K
-        w, h, sk = 25 * k, 18 * k, 6 * k
-        S = pygame.Surface((int(w + sk + 4 * k), int(h + 4 * k)), pygame.SRCALPHA)
-        o = 2 * k
-        poly = [(o + sk, o), (o + w + sk, o), (o + w, o + h), (o, o + h)]
-        pygame.draw.polygon(S, (12, 14, 34), [(px, py) for px, py in poly], 0)
-        inner = [(poly[0][0] + 2.2 * k, poly[0][1] + 2 * k), (poly[1][0] - 2 * k, poly[1][1] + 2 * k),
-                 (poly[2][0] - 2.2 * k, poly[2][1] - 2 * k), (poly[3][0] + 2 * k, poly[3][1] - 2 * k)]
-        if on:
-            top, bot = ((140, 255, 150), (30, 170, 70)) if maxed else ((255, 240, 140), (255, 160, 20))
-            g = pygame.Surface(S.get_size(), pygame.SRCALPHA)
-            for yy in range(S.get_height()):
-                f = yy / max(1, S.get_height() - 1)
-                g.fill(tuple(int(top[i] + (bot[i] - top[i]) * f) for i in range(3)) + (255,), (0, yy, S.get_width(), 1))
-            msk = pygame.Surface(S.get_size(), pygame.SRCALPHA)
-            pygame.draw.polygon(msk, (255, 255, 255, 255), inner)
-            g.blit(msk, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            S.blit(g, (0, 0))
-            hl = [(inner[0][0], inner[0][1]), (inner[1][0], inner[1][1]),
-                  (inner[1][0] - 1.5 * k, inner[1][1] + h * 0.35), (inner[0][0] - 1.5 * k, inner[0][1] + h * 0.35)]
-            pygame.draw.polygon(S, (255, 255, 255, 90), hl)
-        else:
-            pygame.draw.polygon(S, (34, 42, 74), inner)
-            pygame.draw.line(S, (20, 24, 44), inner[0], inner[1], max(1, int(2 * k)))
-        img = gfx.Img(S)
+        raw = ASSETS.seg_raw[name]
+        base_h = 322
+        f = h / base_h
+        img = gfx.from_surface(raw, (raw.get_width() * f, raw.get_height() * f))
         _segs[key] = img
-    surf.blit(img, img.get_rect(center=(x, y)))
+    return img
+
+
+def stat_seg(surf, x, y, on, maxed, t):
+    """Ozellik segmenti: dolu (altin), 5/5 (yesil parlak), bos (lacivert yuva)."""
     if on and maxed:
-        fx.blit_glow(surf, x, y, 14 + 3 * math.sin(t * 6), (20, 60, 25))
+        fx.blit_glow(surf, x, y, 16 + 3 * math.sin(t * 6), (20, 60, 25))
+        img = seg_img("seg_green_glow", 21)
+    elif on:
+        img = seg_img("seg_gold", 21)
+    else:
+        img = seg_img("seg_empty", 21)
+    surf.blit(img, img.get_rect(center=(x, y)))
+
+
+def seg_meter(surf, rect, frac, kind, right=False, flash=False):
+    """Maç ici super bari: 8 parlak segment."""
+    r = pygame.Rect(rect)
+    pill(surf, r.inflate(10, 8), (16, 22, 46), gloss=False)
+    n = 8
+    h = r.h
+    step = r.w / n
+    filled = frac * n
+    name = "seg_orange" if kind == "fire" else "seg_blue"
+    for i in range(n):
+        idx = (n - 1 - i) if right else i
+        cx = r.x + step * (idx + 0.5)
+        part = max(0.0, min(1.0, filled - i))
+        empty = seg_img("seg_empty", h)
+        surf.blit(empty, empty.get_rect(center=(cx, r.centery)))
+        if part > 0:
+            img = seg_img(name, h)
+            if part < 1:
+                img.set_alpha(int(80 + 140 * part))
+            surf.blit(img, img.get_rect(center=(cx, r.centery)))
+            img.set_alpha(255)
+    if flash:
+        fx.blit_glow(surf, r.centerx, r.centery, r.w * 0.55, (70, 40, 10) if kind == "fire" else (20, 50, 80))
 
 
 def panel(surf, rect, color=(15, 20, 40, 200), radius=16, border=None, bw=3):
@@ -629,6 +643,8 @@ class Assets:
                     ("freeze", "pu_freeze.png"), ("gold", "orb_gold.png"))}
         self.pu_small = {key: tf.smoothscale(v, (30, 30)) for key, v in self.pu.items()}
         self.icon_fire = self._fit(L("ball_fire.png"), 30)
+        self.seg_raw = {n: L(n + ".png") for n in ("seg_gold", "seg_orange", "seg_green", "seg_blue", "seg_empty",
+                                                   "seg_gold_glow", "seg_green_glow")}
         self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
         # arayuz parcalari
         self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
@@ -1408,7 +1424,7 @@ class SelectScene(Scene, OnlineMixin):
                 draw_text(s, lab, 14, (tx + 30, y), (205, 218, 245), anchor="midleft", outline=2)
                 for k in range(5):
                     on = k < val and prog * 10 > j * 2 + k
-                    stat_seg(s, tx + 112 + k * 29, y, on, val >= 5, self.t + k * 0.15)
+                    stat_seg(s, tx + 114 + k * 27, y, on, val >= 5, self.t + k * 0.15)
             pw = sim.CHARACTERS[c]["power"]
             ic = A.icon_fire if pw == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
@@ -2416,7 +2432,7 @@ class MatchScene(Scene, OnlineMixin):
             else:
                 bar.topleft = (px + 52, 50)
             full = meter_v >= 100 or armed > 0
-            draw_meter(s, bar, meter_v / 100, col, right=(i == 1), glow=full and int(self.t * 6) % 2 == 0)
+            seg_meter(s, bar, meter_v / 100, pw, right=(i == 1), flash=full and int(self.t * 6) % 2 == 0)
             ic = A.icon_fire if pw == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(bar.left - 18 if i == 0 else bar.right + 18, bar.centery)))
             local = self.mode == "local2" or i == self.me
