@@ -136,6 +136,10 @@ class Ball:
         self.ignore_t = 0.0
         self.ignore_p = -1
         self.squeeze_cd = 0.0
+        self.curve = 0.0
+        self.cdir = 1
+        self.post_cd = 0.0
+        self.px = x
         self.mode = 0          # 0 normal, 1 ates, 2 buz
         self.mode_t = 0.0
         self.owner = -1        # super sutu atan
@@ -399,12 +403,11 @@ class World:
         pw = p.stats["kick"]
         q = 1.0 - 0.4 * clamp(rel, 0.0, 1.0)       # tam temas = guclu sut
         h = p.y - b.y                               # topun ayak seviyesinden yuksekligi
-        if h < 40:
-            ang, kind = 50.0, "shot"     # yerdeki top: havalanir
-        elif h < 85:
-            ang, kind = 34.0, "shot"     # diz hizasi
-        else:
-            ang, kind = 16.0, "volley"   # havadaki top: vole
+        # temas noktasi: ayagin ortasi ~ yerden 32 px. Topun altina vurursan yukselir, ustune vurursan iner.
+        off = clamp(32 - h + BALL_R * 0.4, -55, 40)     # + : topun alti, - : topun ustu
+        ang = clamp(30 + off * 0.62, -6, 56)
+        kind = "volley" if h >= 85 else "shot"
+        q *= 1.0 - 0.12 * clamp(abs(off) / 40, 0, 1)    # tam ortadan vurus en guclu
         spin = 0.1
         mv = p.move * p.dir
         if p.lob and h < 90:
@@ -412,7 +415,7 @@ class World:
             ang, q, spin, kind = 64.0, q * 1.0, -0.8, "lob"
         elif mv < 0:
             ang, q, spin, kind = 66.0, q * 0.9, -0.9, "lob"            # geri giderken: yuksek asirtma
-        elif mv > 0 and abs(p.vx) > 150:
+        elif mv > 0 and abs(p.vx) > 150 and False:
             ang, q, spin = ang - 8, q * 1.08, 0.6                       # kosarak: daha sert
             if kind == "shot":
                 kind = "drive"
@@ -435,6 +438,13 @@ class World:
             self.events.append("kick")
             self._touch(p)
             return
+        b.curve = 0.0
+        if mv > 0 and abs(p.vx) > 150 and kind != "lob":
+            # kosarak capraz vurus: once yukselip sonra kaleye kivrilan kavisli sut
+            ang = ang + 8
+            q *= 0.96
+            b.curve = 1.0
+            kind = "curve" if kind == "shot" else kind
         speed = 900 * pw * q * p.kick_power
         if p.kick_power > 1.3:
             kind = "power"
@@ -443,6 +453,7 @@ class World:
         b.vx = p.dir * speed * math.cos(r) + p.vx * 0.25
         b.vy = -speed * math.sin(r) + (p.vy * 0.2 if p.vy < 0 else 0)
         b.spin = spin
+        b.cdir = p.dir
         b.mode = 0
         b.ignore_t, b.ignore_p = 0.12, p.idx
         self.last_kind = kind
@@ -694,7 +705,13 @@ class World:
             b.vx *= (1 - 0.12 * dt)
             if self.wind and b.y < GROUND - BALL_R - 4:
                 b.vx += self.wind * dt
+            if b.curve > 0:
+                if b.y < GROUND - BALL_R - 4:
+                    b.vx += b.cdir * 520 * b.curve * dt     # kaleye dogru kivrilma
+                    b.vy += 300 * b.curve * dt              # gec dusus
+                b.curve = max(0.0, b.curve - dt * 1.3)
             b.spin *= (1 - 0.6 * dt)
+        b.px = b.x
         b.x += b.vx * dt
         b.y += b.vy * dt
         b.ang += (b.vx / BALL_R + b.spin * 12 * (1 if b.vx >= 0 else -1)) * dt
@@ -942,6 +959,28 @@ class World:
                                            (b.y >= GROUND - BALL_R - 1 and abs(b.vx) < 40
                                             and self.clock - self.players[sh].contact > 0.8)):
                 self._pen_result(False)
+        # doksan: top ust diregin hemen altindan kale cizgisini gecerse direk kosesine carpabilir
+        if self.phase == "play" and not b.mode and b.post_cd <= 0:
+            for side in (0, 1):
+                lx = GOAL_D if side == 0 else W - GOAL_D
+                crossed = (b.px >= lx > b.x) if side == 0 else (b.px <= lx < b.x)
+                if crossed and GOAL_TOP < b.y < GOAL_TOP + BALL_R + 24:
+                    toward = -1 if side == 0 else 1
+                    sp = b.spin * (1 if b.vx * toward > 0 else -1)
+                    out_p = clamp(0.5 - 0.3 * sp, 0.15, 0.85)   # ust falso iceri, ters falso disari
+                    b.post_cd = 0.4
+                    self.events.append("post")
+                    if random.random() < out_p:
+                        b.x = lx - toward * (BALL_R + 2)
+                        b.vx = -b.vx * 0.5
+                        b.vy = abs(b.vy) * 0.3 + 160
+                        b.spin = -b.spin * 0.5
+                        self.events.append("doksan_out")
+                    else:
+                        b.vy = abs(b.vy) * 0.5 + 220
+                        b.vx *= 0.7
+        if b.post_cd > 0:
+            b.post_cd -= dt
         # gol kontrolu
         if self.phase == "play":
             if b.x < GOAL_D - BALL_R * 0.6 and b.y > GOAL_TOP + 2:

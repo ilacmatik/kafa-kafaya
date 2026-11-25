@@ -179,6 +179,7 @@ GOAL_LINES = {
     "own": ["KENDİ KALESİNE! TEŞEKKÜRLER!", "ÇOK AYIP, KENDİ KALENE!", "HEDİYE GOL! SAĞ OL!", "YANLIŞ KALE KARDEŞİM!"],
     "hard": ["ÇOK SERT! TUTABİLİRSEN TUT!", "FÜZE GİBİ GİRDİ!", "FİLEYİ YIRTTI!", "BU NE VURUŞ BE!", "ELİNİ YAKARDI!"],
     "volley": ["VOLE! HAVADA YAKALADI!", "NE VOLE AMA!", "DÜŞMEDEN VURDU!"],
+    "curve": ["KAVİSLİ ŞUT! KIVRILDI GİRDİ!", "FALSO VERDİ, AĞLARA!", "MUZ GİBİ KIVRILDI!"],
     "bicycle": ["RÖVAŞATA! İNANILMAZ!", "TERS MAKAS! FİLELER!", "BU GOL YILIN GOLÜ!", "HAVADA TAKLA ATTI!"],
     "smash": ["SMAÇ KAFA! YERE GÖMDÜ!", "YUKARIDAN ÇAKTI!", "KAFAYI GÖMDÜ GİTTİ!", "VOLEYBOL MU OYNUYORUZ?"],
     "power": ["ŞARJLI FÜZE!", "BEKLEDİ, BEKLEDİ... BAM!", "TAM GÜÇ! FİLE DAYANMADI!", "BU ŞUTA KALE DAYANMAZ!"],
@@ -2345,6 +2346,10 @@ class MatchScene(Scene, OnlineMixin):
                 self.pops.append(["fx_starburst", bx, by, 120, 0.35])
                 self.crowd.kick(0.8)
                 self.shake = max(self.shake, 0.25)
+            elif name == "doksan_out":
+                self.floaters.append(["DİREKTEN DÖNDÜ!", bx, by - 50, 1.4, (255, 230, 150)])
+                snd.play("ooh", 0.3)
+                self.crowd.kick(0.8)
             elif name == "slide":
                 who = int(ev.split(":")[1])
                 pp = snap["p"][who]
@@ -2446,7 +2451,7 @@ class MatchScene(Scene, OnlineMixin):
                     kind, speed, own = parts[2], int(parts[3]), int(parts[4])
                 if own:
                     cat = "own"
-                elif kind in ("super", "head", "lob", "flick", "volley", "smash", "power", "bicycle"):
+                elif kind in ("super", "head", "lob", "flick", "volley", "smash", "power", "bicycle", "curve"):
                     cat = kind
                 elif speed > 760:
                     cat = "hard"
