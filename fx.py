@@ -124,7 +124,7 @@ class Crowd:
                            rnd.randrange(5), sc)
                     self.fans.append([fx, ry - self.oy + rnd.uniform(-1.5, 1.5), key,
                                       rnd.uniform(0, 6.28), rnd.uniform(5.5, 9.0),
-                                      rnd.uniform(0.25, 0.95), rnd.random() < 0.06,
+                                      rnd.uniform(0.45, 0.98), rnd.random() < 0.02,
                                       rnd.random() < 0.18])
                     x += step
             # bayraklar
@@ -229,7 +229,7 @@ class Crowd:
             self.excite = 1.0
             self.boost_side = side
             self.boost_t = 3.5 if side in (0, 1) else 0.0
-        for _ in range(int(amount * 25)):
+        for _ in range(int(amount * 8)):
             self.flash.append([random.uniform(0, self.width), random.uniform(30, self.lh - 20), random.uniform(0.1, 0.25)])
 
     def update(self, dt):
@@ -238,7 +238,7 @@ class Crowd:
             self.boost_t -= dt
         self.target += (0.15 - self.target) * min(1, dt * 0.35)
         self.excite += (self.target - self.excite) * min(1, dt * 4)
-        rate = 1.0 + self.excite ** 2 * 60
+        rate = 0.3 + self.excite ** 2 * 18
         n = rate * dt
         while n > 0:
             if random.random() < n:
@@ -250,7 +250,7 @@ class Crowd:
         self.flash = [f for f in self.flash if f[2] > 0][-80:]
         if self.wave_x is None:
             self.wave_t -= dt
-            if self.wave_t <= 0 and self.excite < 0.35:
+            if False and self.wave_t <= 0:
                 self.wave_x = -80.0
         else:
             self.wave_x += 520 * dt
@@ -277,7 +277,7 @@ class Crowd:
         L.fill((0, 0, 0, 0))
         t = self.t
         ex = self.excite
-        amp = 1.0 + ex * 7.5
+        amp = 0.5 + ex * 3.0
         wx = self.wave_x
         mid = self.width / 2
         sad = self.boost_side if (self.boost_t > 0 and self.teams) else -1
@@ -287,12 +287,12 @@ class Crowd:
             if lim < 1.0 and f[8] > lim:
                 continue   # mac basinda tribun yavas yavas dolar
             x, y, key, ph, spd, thr, always, scarf = f[:8]
-            b = abs(math.sin(t * spd + ph))
+            b = abs(math.sin(t * spd * 0.45 + ph))
             up = ex > thr
             if sad >= 0 and (0 if x < mid else 1) != sad:
                 up = False   # gol yiyen tarafin taraftari susar
                 always = False
-            jump = amp * b if (up or always) else 0.6 * math.sin(t * 1.3 + ph) + 0.6
+            jump = amp * b if (up or always) else 0.0
             pose = 0
             if up or always:
                 pose = 2 if scarf else 1
@@ -309,14 +309,14 @@ class Crowd:
         # bayraklar (tribunun ustune tasar)
         for fl in self.flags:
             px, py, col, ph, sc, d = fl
-            wave_amp = 2 + ex * 5
-            top = py - 34 * sc - (abs(math.sin(t * 7 + ph)) * ex * 6)
+            wave_amp = 1.2 + ex * 1.8
+            top = py - 34 * sc
             gd.line(target, (60, 50, 50), (px, py + 10), (px, top), 2)
             Lw, Hh = 34 * sc, 20 * sc
             pts_top, pts_bot = [], []
             for k in range(7):
                 u = k / 6
-                off = math.sin(t * (6 + ex * 6) + ph - u * 3) * wave_amp * u
+                off = math.sin(t * (2.2 + ex * 1.5) + ph - u * 3) * wave_amp * u
                 pts_top.append((px + d * Lw * u, top + off))
                 pts_bot.append((px + d * Lw * u, top + Hh + off))
             poly = pts_top + pts_bot[::-1]

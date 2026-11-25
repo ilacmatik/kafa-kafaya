@@ -3144,9 +3144,9 @@ class MatchScene(Scene, OnlineMixin):
             return
         for frames, x, y, ph, side, kind in self.banners:
             happy = sad < 0 or sad == side
-            rate = (2.5 + ex * 6) if happy else 1.2
+            rate = (0.8 + ex * 1.2) if happy else 0.4
             img = frames[int(self.t * rate + ph) % 2]
-            lift = (ex * 10 * abs(math.sin(self.t * 7 + ph))) if happy else 0
+            lift = (ex * 3 * abs(math.sin(self.t * 2.5 + ph))) if happy else 0
             s.blit(img, img.get_rect(midbottom=(x, y + 20 - lift)))
 
     def _draw_boards(self, s, spec, snap):
