@@ -14,6 +14,13 @@ TEAM = {
     "yellow": [(252, 205, 45), (45, 45, 55), (235, 165, 25)],
     "green": [(70, 175, 70), (250, 250, 250), (35, 120, 50)],
     "white": [(245, 245, 248), (60, 165, 75), (225, 228, 232)],
+    # karakter formalari (taraftarlar desteklediği oyuncunun rengini giyer)
+    "k0": [(225, 55, 55), (250, 250, 250), (180, 30, 35)],
+    "k1": [(50, 105, 220), (245, 245, 252), (30, 65, 160)],
+    "k2": [(140, 146, 158), (250, 210, 50), (100, 106, 118)],
+    "k3": [(246, 246, 250), (235, 195, 60), (215, 220, 228)],
+    "k4": [(252, 205, 45), (40, 40, 50), (235, 165, 25)],
+    "k5": [(40, 140, 60), (250, 250, 250), (25, 95, 40)],
 }
 SKINS = [(255, 216, 172), (236, 186, 142), (198, 142, 100), (142, 96, 64)]
 HAIRS = [(60, 40, 25), (25, 22, 25), (235, 200, 90), (150, 70, 30)]
@@ -125,6 +132,13 @@ class Crowd:
                 px = rnd.uniform(s["x0"] + 30, s["x1"] - 30)
                 self.flags.append([px, s["y0"] + 20, s["col"], rnd.uniform(0, 6), sc,
                                    1 if rnd.random() < 0.5 else -1])
+        # pankart yerleri: her yarida iki tane, ust ve alt tribunde
+        tiers = sorted(set(s["tier"] for s in secs))
+        ys = {tr: min(s["y0"] for s in secs if s["tier"] == tr) for tr in tiers}
+        self.banner_spots = []
+        for tr, xs in zip(tiers[-2:], ((250, 1030), (460, 820))):
+            for x in xs:
+                self.banner_spots.append((x, ys[tr] + 26))
         self.t = 0.0
         self.excite = 0.15
         self.target = 0.15
@@ -132,6 +146,8 @@ class Crowd:
         self.wave_x = None
         self.wave_t = 12.0
         self.boost_side = -1
+        self.boost_t = 0.0
+        self.teams = None
 
     # ------------------------------------------------------------ sprite
     def _sprite(self, key, pose):
@@ -192,16 +208,31 @@ class Crowd:
         return base
 
     # ------------------------------------------------------------ guncelle
+    def set_teams(self, c0, c1):
+        """Sol yari oyuncu 0'i, sag yari oyuncu 1'i destekler."""
+        self.teams = ("k%d" % c0, "k%d" % c1)
+        mid = self.width / 2
+        for fan in self.fans:
+            col, shade, skin, hair, sc = fan[2]
+            fan[2] = (self.teams[0 if fan[0] < mid else 1], shade, skin, hair, sc)
+        for fl in self.flags:
+            fl[2] = self.teams[0 if fl[0] < mid else 1]
+        self.boost_side = -1
+        self.boost_t = 0.0
+
     def kick(self, amount, side=-1):
         self.target = max(self.target, amount)
         if amount >= 0.9:
             self.excite = 1.0
             self.boost_side = side
+            self.boost_t = 3.5 if side in (0, 1) else 0.0
         for _ in range(int(amount * 25)):
             self.flash.append([random.uniform(0, self.width), random.uniform(30, self.lh - 20), random.uniform(0.1, 0.25)])
 
     def update(self, dt):
         self.t += dt
+        if self.boost_t > 0:
+            self.boost_t -= dt
         self.target += (0.15 - self.target) * min(1, dt * 0.35)
         self.excite += (self.target - self.excite) * min(1, dt * 4)
         rate = 1.0 + self.excite ** 2 * 60
@@ -245,10 +276,15 @@ class Crowd:
         ex = self.excite
         amp = 1.0 + ex * 7.5
         wx = self.wave_x
+        mid = self.width / 2
+        sad = self.boost_side if (self.boost_t > 0 and self.teams) else -1
         for f in self.fans:
             x, y, key, ph, spd, thr, always, scarf = f
             b = abs(math.sin(t * spd + ph))
             up = ex > thr
+            if sad >= 0 and (0 if x < mid else 1) != sad:
+                up = False   # gol yiyen tarafin taraftari susar
+                always = False
             jump = amp * b if (up or always) else 0.6 * math.sin(t * 1.3 + ph) + 0.6
             pose = 0
             if up or always:

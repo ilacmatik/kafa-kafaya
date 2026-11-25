@@ -1596,6 +1596,8 @@ class MatchScene(Scene, OnlineMixin):
         self.stad = app.stadium if 0 <= app.stadium < len(STADIUMS) else 0
         self.crowd = app.crowds[self.stad]
         self.crowd.excite = self.crowd.target = 0.15
+        self.crowd.set_teams(self.chars[0], self.chars[1])
+        self.banners = self._make_banners()
         app.sound.ambience(True)
         if self.world:
             self.snap = self.world.snapshot()
@@ -2162,6 +2164,7 @@ class MatchScene(Scene, OnlineMixin):
         s = self.frame
         s.blit(A.stadiums[self.stad], (0, 0))
         self.crowd.draw(s)
+        self._draw_banners(s)
         sd = STADIUMS[self.stad]
         if sd["boards"]:
             self._draw_boards(s, sd["boards"], self.snap)
@@ -2261,6 +2264,43 @@ class MatchScene(Scene, OnlineMixin):
         screen.fill((0, 0, 0))
         screen.blit(s, (ox, oy))
         self._draw_overlays(screen, snap)
+
+    def _make_banners(self):
+        """Taraftar pankartlari: karakterin kafasi + adi, forma renginde."""
+        A = self.app.assets
+        k = gfx.K
+        out = []
+        secs = self.crowd.banner_spots
+        for side in (0, 1):
+            c = self.chars[side]
+            col = fx.TEAM["k%d" % c][0]
+            cv = gfx.Canvas(pygame.Surface((int(168 * k), int(66 * k)), pygame.SRCALPHA))
+            pill(cv, (0, 0, 168, 66), col, radius=16)
+            gd.circle(cv, (12, 14, 34), (34, 33), 29)
+            gd.circle(cv, (255, 255, 255), (34, 33), 27)
+            por = A.portrait[c]
+            cv.blit(por, por.get_rect(center=(34, 34)))
+            light = sum(col) > 560
+            draw_text(cv, sim.DISPLAY_NAMES[c], 22, (108, 33), (25, 30, 50) if light else WHITE,
+                      outline=0 if light else 3)
+            img = gfx.Img(cv.surf)
+            spots = [sp for sp in secs if (sp[0] < W / 2) == (side == 0)]
+            for x, y in spots:
+                out.append([img, x, y, random.uniform(0, 6.28), side])
+        return out
+
+    def _draw_banners(self, s):
+        ex = self.crowd.excite
+        sad = self.crowd.boost_side if self.crowd.boost_t > 0 else -1
+        for img, x, y, ph, side in self.banners:
+            happy = sad < 0 or sad == side
+            lift = (ex * 22 * abs(math.sin(self.t * 7 + ph))) if happy else 0
+            ang = math.sin(self.t * (2.2 + ex * 4) + ph) * (3 + ex * 6 if happy else 1.5)
+            cy = y - lift
+            for dx in (-60, 60):
+                gd.line(s, (70, 60, 55), (x + dx, cy + 8), (x + dx, cy + 46), 3)
+            r_ = tf.rotate(img, ang)
+            s.blit(r_, r_.get_rect(center=(x, cy)))
 
     def _draw_boards(self, s, spec, snap):
         """Saha kenarindaki LED reklam panolari: kayan yazilar, golde GOOOL."""
