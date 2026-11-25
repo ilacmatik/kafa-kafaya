@@ -1129,6 +1129,7 @@ class MenuScene(Scene):
         self.spark = Sparkles(30)
         self.pick_t = 0.0
         self.slots = [pygame.Rect(318 + k * 124 - 50, 492, 100, 92) for k in range(len(MENU_ITEMS))]
+        app.series = None
 
     def _go(self):
         a = self.app
@@ -1547,10 +1548,13 @@ class SelectScene(Scene, OnlineMixin):
                 self.conn.send({"t": "wx", "w": app.weather})
         self.cards = [pygame.Rect(cx - 90, 350, 180, 300) for cx in PODIUMS]
         self.anim = [[-1, 0.0], [-1, 0.0]]
+        app.series = None
+        self.series_rect = pygame.Rect(0, 0, 160, 26)
+        self.series_rect.center = (W // 2 + 86, 323)
         self.rolling = [0.0, 0.0]
         self.roll_tick = [0.0, 0.0]
-        self.rand_rect = pygame.Rect(0, 0, 170, 28)
-        self.rand_rect.center = (W // 2, 323)
+        self.rand_rect = pygame.Rect(0, 0, 160, 26)
+        self.rand_rect.center = (W // 2 - 86, 323)
         self.stad_rect = pygame.Rect(0, 0, 230, 26)
         self.stad_rect.center = (W // 2, 262)
         self.wx_rect = pygame.Rect(0, 0, 200, 24)
@@ -1599,6 +1603,14 @@ class SelectScene(Scene, OnlineMixin):
             return
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.rand_rect.collidepoint(e.pos):
             self._random()
+            return
+        if ((e.type == pygame.KEYDOWN and e.key == pygame.K_b) or
+                (e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.series_rect.collidepoint(e.pos))):
+            if self.mode in ("bot", "local2", "host"):
+                self.app.series_len = 3 if self.app.series_len == 1 else 1
+                self.app.sound.play("click")
+                if self.conn:
+                    self.conn.send({"t": "sr", "n": self.app.series_len})
             return
         if e.type == pygame.KEYDOWN:
             k = e.key
@@ -1718,8 +1730,11 @@ class SelectScene(Scene, OnlineMixin):
                     self.app.stadium = m.get("s", 0) % len(STADIUMS)
                 elif t == "wx":
                     self.app.weather = m.get("w", 0) % len(WEATHERS)
+                elif t == "sr":
+                    self.app.series_len = m.get("n", 1)
                 elif t == "start" and self.mode == "client":
                     self.app.stadium = m.get("st", 0) % len(STADIUMS)
+                    self.app.series_len = m.get("sr", 1)
                     self.app.go(MatchScene(self.app, "client", m["c"], m["dur"], conn=self.conn,
                                            pending=msgs[i + 1:]))
                     return
@@ -1730,7 +1745,8 @@ class SelectScene(Scene, OnlineMixin):
         elif self.mode in ("local2",) and all(self.ready):
             self.app.go(MatchScene(self.app, "local2", self.pick, self.dur))
         elif self.mode == "host" and all(self.ready):
-            self.conn.send({"t": "start", "c": self.pick, "dur": self.dur, "st": self.app.stadium})
+            self.conn.send({"t": "start", "c": self.pick, "dur": self.dur, "st": self.app.stadium,
+                            "sr": self.app.series_len})
             self.app.go(MatchScene(self.app, "host", self.pick, self.dur, conn=self.conn))
 
     def draw(self, s):
@@ -1794,7 +1810,13 @@ class SelectScene(Scene, OnlineMixin):
                   (stp.centerx, stp.centery - 1), WHITE, outline=2)
         rr_ = self.rand_rect
         pill(s, rr_, (150, 60, 170), radius=12)
-        draw_text(s, "RASTGELE  (R)", 14, (rr_.centerx, rr_.centery - 1), WHITE, outline=2)
+        draw_text(s, "RASTGELE  (R)", 13, (rr_.centerx, rr_.centery - 1), WHITE, outline=2)
+        if self.mode != "cup":
+            sr_ = self.series_rect
+            three = self.app.series_len == 3
+            pill(s, sr_, (190, 120, 20) if three else (60, 75, 115), radius=12)
+            draw_text(s, ("3 MAÇLIK SERİ" if three else "TEK MAÇ") + ("  (B)" if self.mode != "client" else ""),
+                      13, (sr_.centerx, sr_.centery - 1), WHITE, outline=2)
         wxr = self.wx_rect
         wcol = {"clear": (200, 140, 30), "rain": (50, 90, 160), "snow": (120, 150, 190), "wind": (60, 140, 150),
                 "random": (110, 70, 160)}[WEATHERS[self.app.weather][0]]
@@ -1822,7 +1844,7 @@ class SelectScene(Scene, OnlineMixin):
             if sel1:
                 tags.append((1, labels[1]))
             for n, (who, lab) in enumerate(tags):
-                ty = 342 - n * 32 + math.sin(self.t * 5) * 3
+                ty = 350 - n * 32 + math.sin(self.t * 5) * 3
                 tag = pygame.Rect(0, 0, 120, 26)
                 tag.center = (cx, ty)
                 gd.polygon(s, (12, 14, 34), [(cx - 10, tag.bottom - 2), (cx + 10, tag.bottom - 2), (cx, tag.bottom + 10)])
@@ -1830,13 +1852,13 @@ class SelectScene(Scene, OnlineMixin):
                 pill(s, tag, P_COLORS[who], radius=11)
                 draw_text(s, lab, 14, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         if self.mode == "local2":
-            hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum  ·  H hava"
+            hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum  ·  H hava  ·  B seri"
         elif self.mode == "bot":
-            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum · H hava"
+            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum · H hava · B seri"
         elif self.mode == "cup":
             hint = "←/→ karakterini seç · ENTER başla"
         else:
-            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else
+            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava · B seri" if self.mode == "host" else
                                              " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
         draw_text(s, hint + "   ·   R rastgele   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
 
@@ -1867,6 +1889,13 @@ class MatchScene(Scene, OnlineMixin):
         self.weather = weather or pick_weather(app.weather)
         self.recorded = False
         self.record_line = ""
+        self.series_done = False
+        if app.series and max(app.series["w"]) >= 2:
+            app.series = None
+        if cup is None and app.series_len == 3 and app.series is None:
+            app.series = {"n": 3, "w": [0, 0]}
+        if cup is not None:
+            app.series = None
         self.last_stats = None
         self.rain = [[random.uniform(0, W), random.uniform(0, H), random.uniform(0.8, 1.2)] for _ in range(160)]
         self.chars = list(chars)
@@ -2052,7 +2081,8 @@ class MatchScene(Scene, OnlineMixin):
                     return
             self.pending = []
             if w.phase == "over" and all(self.again):
-                self.conn.send({"t": "start", "c": self.chars, "dur": self.dur, "st": self.app.stadium})
+                self.conn.send({"t": "start", "c": self.chars, "dur": self.dur, "st": self.app.stadium,
+                                "sr": self.app.series_len})
                 self.app.go(MatchScene(self.app, "host", self.chars, self.dur, conn=self.conn))
                 return
         if self.paused:
@@ -2110,6 +2140,7 @@ class MatchScene(Scene, OnlineMixin):
                     self.again = [bool(ag[0]), bool(ag[1])]
             elif t == "start":
                 self.app.stadium = m.get("st", 0) % len(STADIUMS)
+                self.app.series_len = m.get("sr", 1)
                 self.app.go(MatchScene(self.app, "client", m["c"], m["dur"], conn=self.conn, pending=msgs[i + 1:]))
                 return
             elif t == "select":
@@ -2466,6 +2497,18 @@ class MatchScene(Scene, OnlineMixin):
         if self.recorded:
             return
         self.recorded = True
+        sr = self.app.series
+        if sr and snap["win"] in (0, 1):
+            if self.mode == "local2":
+                sr["w"][snap["win"]] += 1
+            else:
+                sr["w"][0 if snap["win"] == self.me else 1] += 1
+            if max(sr["w"]) >= 2:
+                self.series_done = True
+                if sr["w"][0] >= 2 and self.mode != "local2":
+                    rec = load_record()
+                    rec["series"] = rec.get("series", 0) + 1
+                    save_record(rec)
         rec = load_record()
         win = snap["win"]
         if self.mode == "local2":
@@ -3017,7 +3060,7 @@ class MatchScene(Scene, OnlineMixin):
                 elif n % 4 >= 2:
                     gd.line(s, (230, 240, 255), (xx, yy), (xx + d * 50 * k, yy), 2)
             pnl = pygame.Rect(0, 0, 150, 30)
-            pnl.midtop = (W // 2, 98)
+            pnl.midtop = (W // 2, 128)
             pill(s, pnl, (40, 70, 120), radius=12)
             draw_text(s, ("RÜZGAR →" if d > 0 else "← RÜZGAR"), 15, (pnl.centerx, pnl.centery - 1), WHITE, outline=2)
 
@@ -3428,6 +3471,17 @@ class MatchScene(Scene, OnlineMixin):
                 ix = (bar.left + 16 + k * 34) if i == 0 else (bar.right - 16 - k * 34)
                 s.blit(img, img.get_rect(center=(ix, bar.bottom + 46)))
 
+    def _draw_series(self, s, snap):
+        sr = self.app.series
+        if not sr or snap.get("pen") or snap["ph"] == "over":
+            return
+        r = pygame.Rect(0, 0, 230, 26)
+        r.midtop = (W // 2, 94)
+        pill(s, r, (150, 100, 20), radius=11)
+        a_, b_ = sr["w"]
+        draw_text(s, "SERİ %d - %d  ·  MAÇ %d/3" % (a_, b_, a_ + b_ + 1), 14, (r.centerx, r.centery - 1), WHITE,
+                  outline=2)
+
     def _draw_pens(self, s, snap):
         pen = snap.get("pen")
         if not pen:
@@ -3462,6 +3516,7 @@ class MatchScene(Scene, OnlineMixin):
             pass
 
     def _draw_overlays(self, s, snap):
+        self._draw_series(s, snap)
         self._draw_pens(s, snap)
         for txt, x, y, life, col in self.floaters:
             draw_text(s, txt, 30, (x, y), col, outline=4, alpha=int(255 * min(1, life * 2)))
@@ -3528,14 +3583,42 @@ class MatchScene(Scene, OnlineMixin):
                     y += 42
             if self.record_line:
                 draw_text(s, self.record_line, 17, (W // 2, 560), (255, 225, 140), outline=2, title=False)
+            sr = self.app.series
+            if sr:
+                a_, b_ = sr["w"]
+                if self.mode == "local2":
+                    lbl = "SERİ  ·  1. OYUNCU %d - %d 2. OYUNCU" % (a_, b_)
+                else:
+                    lbl = "SERİ  ·  SEN %d - %d RAKİP" % (a_, b_)
+                if self.series_done:
+                    if self.mode == "local2":
+                        res_t = "%d. OYUNCU SERİYİ KAZANDI!" % (1 if a_ > b_ else 2)
+                    else:
+                        res_t = "SERİYİ KAZANDIN!" if a_ > b_ else "SERİYİ KAYBETTİN"
+                    cup_img = A.cup_art.get("cup_gold")
+                    if cup_img is not None and (a_ > b_ or self.mode == "local2"):
+                        ci = tf.rotozoom(cup_img, 0, 0.36)
+                        for dx_ in (-205, 205):
+                            s.blit(ci, ci.get_rect(center=(W // 2 + dx_, 582)))
+                    draw_text(s, res_t, 30, (W // 2, 586), GOLD, outline=4)
+                else:
+                    draw_text(s, lbl, 22, (W // 2, 586), GOLD, outline=3)
             if self.cup is not None:
                 hint = "ENTER: devam"
+            elif sr and not self.series_done and self.mode in ("bot", "local2"):
+                hint = "ENTER: sonraki maç (%d/3)     ESC: seriyi bitir" % (sum(sr["w"]) + 1)
+            elif sr and self.series_done and self.mode in ("bot", "local2"):
+                hint = "ENTER: yeni seri     ESC: karakter seçimi"
             elif self.mode in ("bot", "local2"):
                 hint = "ENTER: rövanş     ESC: karakter seçimi"
             else:
                 me_ok = self.again[self.me]
                 other_ok = self.again[1 - self.me]
                 hint = "ENTER: rövanş     ESC: karakter seçimi"
+                if sr and not self.series_done:
+                    hint = "ENTER: sonraki maç (%d/3)     ESC: seriyi bitir" % (sum(sr["w"]) + 1)
+                elif sr:
+                    hint = "ENTER: yeni seri     ESC: karakter seçimi"
                 if me_ok:
                     hint = "Rakibin rövanş onayı bekleniyor..."
                 elif other_ok:
@@ -3758,6 +3841,8 @@ class App:
         self.stadium = 1   # varsayilan: Timsah Arena
         self.mirror = load_record().get("mirror", True)
         self.weather = 0
+        self.series_len = 1     # 1: tek mac, 3: uc maclik seri
+        self.series = None      # {"n": 3, "w": [benim, rakip]}
         self.sound = Sound()
         self.clock = pygame.time.Clock()
         self.running = True
