@@ -1694,6 +1694,8 @@ class MatchScene(Scene, OnlineMixin):
         self.ref_card = 0.0
         self.ref_x = W / 2 + 60
         self.ref_pose = ["whistle", 1.2]
+        self.ref_on = 1.0          # 1: sahada, 0: kenarda (reklam panolarinin onunde, kucuk)
+        self.ref_target = W / 2 + 60
         self.pops = []   # [gorsel, x, y, boy, omur(, maks)]
         self.fw_queue = []
         self.last_count = None
@@ -1971,8 +1973,10 @@ class MatchScene(Scene, OnlineMixin):
             name = ev.split(":")[0]
             if name in ("whistle", "end", "pens"):
                 self.ref_pose = ["whistle", 1.0]
+                self.ref_target = W / 2 + 60
             elif name in ("goal", "pen_goal"):
                 self.ref_pose = ["point", 2.2]
+                self.ref_target = W / 2 + 60
             if name in ("kick", "head", "bounce", "post", "whistle", "super_fire", "super_ice", "freeze",
                         "fire_hit", "jump", "swing", "shield", "block", "armed", "end", "golden", "pu_spawn",
                         "land"):
@@ -2044,7 +2048,8 @@ class MatchScene(Scene, OnlineMixin):
                 self._burst(pp[0], pp[1] - 90, 12, [WHITE, GOLD], 260, 0.35, 3, 300, "spark", 0)
                 self.shake = max(self.shake, 0.15)
                 if random.random() < 0.35:
-                    self.ref_pose = ["card", 1.6]
+                    self.ref_pose = ["card", 1.8]
+                    self.ref_target = max(160, min(W - 160, pp[0] + (90 if pp[0] < W / 2 else -90)))
             elif name == "pens":
                 self._say("PENALTILAR!", GOLD, 2.0)
                 snd.play("golden", 0)
@@ -2275,9 +2280,18 @@ class MatchScene(Scene, OnlineMixin):
         self.goal_flash = max(0.0, self.goal_flash - dt)
         self.ref_card = max(0.0, self.ref_card - dt)
         if self.snap:
-            bxr = self.snap["b"][0]
-            tx = max(150, min(W - 150, bxr + (110 if bxr < W / 2 else -110)))
-            self.ref_x += (tx - self.ref_x) * min(1.0, dt * 1.2)
+            ph_ = self.snap["ph"]
+            active = self.ref_pose[1] > 0 or ph_ in ("ready", "pen_ready", "over")
+            goal_ = 1.0 if active else 0.0
+            self.ref_on += (goal_ - self.ref_on) * min(1.0, dt * 3.5)
+            if ph_ in ("ready", "pen_ready"):
+                tx = W / 2 + 60
+            elif active:
+                tx = self.ref_target
+            else:
+                bxr = self.snap["b"][0]
+                tx = max(160, min(W - 160, bxr))
+            self.ref_x += (tx - self.ref_x) * min(1.0, dt * (3.0 if active else 1.0))
         self.ref_pose[1] -= dt
         for r_ in self.rain:
             r_[1] += 900 * r_[2] * dt if self.weather_now() == "rain" else 70 * r_[2] * dt
@@ -2529,19 +2543,23 @@ class MatchScene(Scene, OnlineMixin):
         return gfx.Img(img)
 
     def _draw_ref(self, s, snap):
+        """Hakem: olay aninda sahaya gelir, diger zamanlarda kenarda (panolarin onunde) kucuk durur."""
         A = self.app.assets
         if not A.ref:
             return
+        f = max(0.0, min(1.0, self.ref_on))
         pose = self.ref_pose[0] if self.ref_pose[1] > 0 else "idle"
         img = A.ref.get(pose, A.ref.get("idle"))
         bxr = snap["b"][0]
         if bxr < self.ref_x:
             img = A.flipped(img)
-        moving = abs(self.ref_x - (bxr + (110 if bxr < W / 2 else -110))) > 30 and pose == "idle"
-        bob = abs(math.sin(self.t * 9)) * 3 if moving else 0
-        sh = A.shadow(30)
-        s.blit(sh, sh.get_rect(center=(self.ref_x, sim.GROUND + 2)))
-        s.blit(img, img.get_rect(midbottom=(self.ref_x, sim.GROUND - bob)))
+        sc = 0.5 + 0.5 * f
+        y = 568 + (sim.GROUND - 568) * f
+        if sc < 0.99:
+            img = tf.rotozoom(img, 0, sc)
+        sh = A.shadow(int(30 * sc))
+        s.blit(sh, sh.get_rect(center=(self.ref_x, y + 2)))
+        s.blit(img, img.get_rect(midbottom=(self.ref_x, y)))
 
     def _draw_weather(self, s, snap):
         wx = snap.get("wx", "clear")
