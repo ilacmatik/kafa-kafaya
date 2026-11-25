@@ -39,6 +39,7 @@ STEP = 1.0 / 60
 VERSION = 1
 DURATIONS = [60, 90, 120, 180]
 LEVELS = ["KOLAY", "NORMAL", "ZOR"]
+PODIUMS = [158, 352, 545, 735, 927, 1122]   # karakter secim podyumlari (x)
 
 GOLD = (255, 205, 60)
 WHITE = (255, 255, 255)
@@ -410,15 +411,20 @@ class Assets:
         for y in range(0, GH, 14):
             pygame.draw.line(nl, (240, 240, 245, 170), (0, y * k), (GD * k, y * k), lw)
         self.net_lines = gfx.Img(nl)
-        mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_night.jpg")).convert(),
+        mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "menu_bg.jpg")).convert(),
                                           (int(W * k), int(H * k)))
-        dark = pygame.Surface(mb.get_size(), pygame.SRCALPHA)
-        dark.fill((5, 10, 30, 110))
-        mb.blit(dark, (0, 0))
         self.menu_bg = gfx.Img(mb)
+        mbd = mb.copy()
+        dark = pygame.Surface(mb.get_size(), pygame.SRCALPHA)
+        dark.fill((4, 8, 24, 120))
+        mbd.blit(dark, (0, 0))
+        self.menu_bg_dark = gfx.Img(mbd)
+        self.select_bg = gfx.Img(pygame.transform.smoothscale(
+            pygame.image.load(res("assets", "select_bg.jpg")).convert(), (int(W * k), int(H * k))))
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
         self.big_celeb = []
+        self.portrait_big = []
         self.kick_anchor = []
         self.poses = []
         import json
@@ -454,6 +460,7 @@ class Assets:
             head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.40))).copy()
             ph = 58
             self.portrait.append(scaled(head, ph / head.get_height()))
+            self.portrait_big.append(scaled(head, 104 / head.get_height()))
         d = sim.BALL_R * 2 + 2
         self.ball = S(L("ball.png"), d, d)
         self.ball_fire = self._fit(L("ball_fire.png"), int(d * 1.45))
@@ -466,6 +473,19 @@ class Assets:
                     ("freeze", "pu_freeze.png"), ("gold", "orb_gold.png"))}
         self.pu_small = {key: tf.smoothscale(v, (30, 30)) for key, v in self.pu.items()}
         self.icon_fire = self._fit(L("ball_fire.png"), 30)
+        # arayuz parcalari
+        self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
+        self.icons = {n: self._fit(L("ic_%s.png" % n), 46) for n in ("host", "join", "bot", "2p", "keys", "exit")}
+        logo = L("logo.png")
+        self.logo = self._fit(logo, 540)
+        self.logo_small = self._fit(logo, 300)
+        self.hero = []
+        for i in range(6):
+            src = L("p%d_celeb.png" % i) if os.path.exists(res("assets", "p%d_celeb.png" % i)) else L("p%d_idle.png" % i)
+            idl = L("p%d_idle.png" % i)
+            f = 300 / idl.get_height()
+            self.hero.append((scaled(idl, f), scaled(src, f)))
+        self._slices = {}
         self.icon_ice = self._fit(L("ball_ice.png"), 30)
         self._flip_cache = {}
 
@@ -481,6 +501,57 @@ class Assets:
         s.fill((150, 200, 255, 255), special_flags=pygame.BLEND_RGBA_MULT)
         s.fill((40, 70, 110, 0), special_flags=pygame.BLEND_RGBA_ADD)
         return gfx.Img(s)
+
+    def slice3(self, name, w, h):
+        """Hap seklindeki butonu kenarlari bozulmadan genislet."""
+        key = (name, int(w), int(h))
+        img = self._slices.get(key)
+        if img is None:
+            raw = self.ui_raw[name]
+            k = gfx.K
+            PW, PH = max(4, int(w * k)), max(4, int(h * k))
+            f = PH / raw.get_height()
+            src = pygame.transform.smoothscale(raw, (max(4, int(raw.get_width() * f)), PH))
+            cap = min(int(PH * 0.6), src.get_width() // 2 - 1, PW // 2)
+            out = pygame.Surface((PW, PH), pygame.SRCALPHA)
+            out.blit(src, (0, 0), pygame.Rect(0, 0, cap, PH))
+            out.blit(src, (PW - cap, 0), pygame.Rect(src.get_width() - cap, 0, cap, PH))
+            mid = src.subsurface(pygame.Rect(cap, 0, src.get_width() - 2 * cap, PH))
+            out.blit(pygame.transform.smoothscale(mid, (max(1, PW - 2 * cap), PH)), (cap, 0))
+            img = gfx.Img(out)
+            self._slices[key] = img
+        return img
+
+    def slice9(self, name, w, h, corner=40, out_corner=30):
+        """Cerceveli paneli koseleri bozulmadan istenen boyuta getir."""
+        key = (name, int(w), int(h), 9)
+        img = self._slices.get(key)
+        if img is None:
+            raw = self.ui_raw[name]
+            k = gfx.K
+            PW, PH = max(8, int(w * k)), max(8, int(h * k))
+            c = corner
+            oc = min(int(out_corner * k), PW // 2, PH // 2)
+            rw, rh = raw.get_size()
+            out = pygame.Surface((PW, PH), pygame.SRCALPHA)
+
+            def part(sx, sy, sw, sh, dx, dy, dw, dh):
+                if sw <= 0 or sh <= 0 or dw <= 0 or dh <= 0:
+                    return
+                piece = raw.subsurface(pygame.Rect(sx, sy, sw, sh))
+                out.blit(pygame.transform.smoothscale(piece, (dw, dh)), (dx, dy))
+            part(0, 0, c, c, 0, 0, oc, oc)
+            part(rw - c, 0, c, c, PW - oc, 0, oc, oc)
+            part(0, rh - c, c, c, 0, PH - oc, oc, oc)
+            part(rw - c, rh - c, c, c, PW - oc, PH - oc, oc, oc)
+            part(c, 0, rw - 2 * c, c, oc, 0, PW - 2 * oc, oc)
+            part(c, rh - c, rw - 2 * c, c, oc, PH - oc, PW - 2 * oc, oc)
+            part(0, c, c, rh - 2 * c, 0, oc, oc, PH - 2 * oc)
+            part(rw - c, c, c, rh - 2 * c, PW - oc, oc, oc, PH - 2 * oc)
+            part(c, c, rw - 2 * c, rh - 2 * c, oc, oc, PW - 2 * oc, PH - 2 * oc)
+            img = gfx.Img(out)
+            self._slices[key] = img
+        return img
 
     def shadow(self, r):
         r = max(2, int(r) // 2 * 2)
@@ -518,27 +589,71 @@ class Scene:
         pass
 
 
+ASSETS = None   # App tarafindan doldurulur
+
+
+def frame(s, rect, alpha=240):
+    """Altin cerceveli lacivert panel (Gemini arayuz parcasi)."""
+    r = pygame.Rect(rect)
+    img = ASSETS.slice9("ui_panel", r.w, r.h)
+    if alpha < 255:
+        img.set_alpha(alpha)
+    s.blit(img, r.topleft)
+    if alpha < 255:
+        img.set_alpha(255)
+
+
+class Sparkles:
+    """Menulerde suzulen isiltilar ve konfeti."""
+
+    def __init__(self, n=40):
+        self.p = [self._new(True) for _ in range(n)]
+
+    @staticmethod
+    def _new(anywhere=False):
+        return [random.uniform(0, W), random.uniform(0, H) if anywhere else -10, random.uniform(-15, 15),
+                random.uniform(18, 50), random.uniform(0, 6.28), random.choice((0, 0, 1)),
+                random.choice([GOLD, (255, 255, 255), (120, 200, 255), (255, 120, 160)])]
+
+    def update(self, dt):
+        for q in self.p:
+            q[0] += q[2] * dt + math.sin(q[4]) * 10 * dt
+            q[1] += q[3] * dt
+            q[4] += dt * 2
+            if q[1] > H + 10:
+                q[:] = self._new()
+
+    def draw(self, s, t):
+        for x, y, _, _, ph, kind, col in self.p:
+            if kind == 0:
+                r = 2 + 1.5 * abs(math.sin(ph * 2))
+                MatchScene._star(s, x, y, r * 1.6, col)
+            else:
+                w = 4
+                hgt = 1 + 6 * abs(math.cos(ph))
+                gd.rect(s, col, (x, y, w, hgt))
+
+
 class Button:
-    def __init__(self, rect, text, cb, color=(40, 120, 230)):
+    def __init__(self, rect, text, cb, icon=None):
         self.rect = pygame.Rect(rect)
         self.text = text
         self.cb = cb
-        self.color = color
+        self.icon = icon
 
     def draw(self, s, hot, t):
+        A = ASSETS
         r = self.rect.copy()
         if hot:
-            r.inflate_ip(14 + 4 * math.sin(t * 6), 8)
-        sh = r.move(0, 6)
-        gd.rect(s, (10, 14, 30), sh, 0, border_radius=18)
-        c = tuple(min(255, int(v * (1.25 if hot else 1))) for v in self.color)
-        gd.rect(s, c, r, 0, border_radius=18)
-        hl = pygame.Rect(r.x + 6, r.y + 4, r.w - 12, r.h // 2 - 4)
-        hs = pygame.Surface(hl.size, pygame.SRCALPHA)
-        gd.rect(hs, (255, 255, 255, 50), hs.get_rect(), 0, border_radius=14)
-        s.blit(hs, hl.topleft)
-        gd.rect(s, GOLD if hot else (230, 235, 255), r, 4, border_radius=18)
-        draw_text(s, self.text, 30, r.center)
+            r.inflate_ip(16 + 4 * math.sin(t * 6), 8)
+            fx.blit_glow(s, r.centerx, r.centery, r.w * 0.45, (60, 40, 10))
+        img = A.slice3("ui_btn_hot" if hot else "ui_btn_blue", r.w, r.h)
+        s.blit(img, r.topleft)
+        if self.icon:
+            ic = A.icons[self.icon]
+            s.blit(ic, ic.get_rect(center=(r.x + r.h * 0.62, r.centery - 1)))
+        draw_text(s, self.text, 28 if hot else 26, (r.centerx + (14 if self.icon else 0), r.centery - 2),
+                  WHITE, outline=3)
 
 
 class ButtonList:
@@ -580,29 +695,39 @@ class ButtonList:
             b.draw(s, i == self.sel, self.t)
 
 
-def draw_title(s, y, t, size=86):
-    bob = math.sin(t * 2.2) * 4
-    draw_text(s, "KAFA KAFAYA", size, (W // 2, y + bob), GOLD, outline=6)
-    draw_text(s, "F U T B O L", 26, (W // 2, y + size * 0.62 + bob), WHITE, outline=3)
+def draw_title(s, y, t, small=False):
+    img = ASSETS.logo_small if small else ASSETS.logo
+    bob = math.sin(t * 2.2) * (3 if small else 5)
+    fx.blit_glow(s, W // 2, y + bob, img.get_width() * 0.42, (40, 30, 10))
+    s.blit(img, img.get_rect(center=(W // 2, y + bob)))
+
+
+def menu_backdrop(s, t, dark=True, sparkles=None):
+    A = ASSETS
+    s.blit(A.menu_bg_dark if dark else A.menu_bg, (0, 0))
+    fx.blit_glow(s, 637, 262, 120 + 12 * math.sin(t * 2), (40, 50, 80))
+    if sparkles:
+        sparkles.draw(s, t)
 
 
 class MenuScene(Scene):
     def __init__(self, app):
         super().__init__(app)
         a = app
-        x = W // 2 - 190
-        mk = lambda i, txt, cb, col=(40, 120, 230): Button((x, 238 + i * 72, 380, 58), txt, cb, col)
+        x, bw, bh = W // 2 - 210, 420, 60
+        mk = lambda i, txt, cb, ic: Button((x, 262 + i * 70, bw, bh), txt, cb, ic)
         self.list = ButtonList([
-            mk(0, "MAÇ KUR", lambda: a.go(HostWaitScene(a)), (230, 110, 30)),
-            mk(1, "MAÇA KATIL", lambda: a.go(JoinScene(a)), (230, 110, 30)),
-            mk(2, "BİLGİSAYARA KARŞI", lambda: a.go(SelectScene(a, "bot"))),
-            mk(3, "TEK PC 2 KİŞİ", lambda: a.go(SelectScene(a, "local2"))),
-            mk(4, "KONTROLLER", lambda: a.go(HelpScene(a)), (70, 80, 110)),
-            mk(5, "ÇIKIŞ", a.quit, (150, 40, 50)),
+            mk(0, "MAÇ KUR", lambda: a.go(HostWaitScene(a)), "host"),
+            mk(1, "MAÇA KATIL", lambda: a.go(JoinScene(a)), "join"),
+            mk(2, "BİLGİSAYARA KARŞI", lambda: a.go(SelectScene(a, "bot")), "bot"),
+            mk(3, "TEK PC 2 KİŞİ", lambda: a.go(SelectScene(a, "local2")), "2p"),
+            mk(4, "KONTROLLER", lambda: a.go(HelpScene(a)), "keys"),
+            mk(5, "ÇIKIŞ", a.quit, "exit"),
         ])
         self.t = 0
-        self.balls = [[random.uniform(0, W), random.uniform(-H, 0), random.uniform(-40, 40), random.uniform(0, 6)]
-                      for _ in range(6)]
+        self.spark = Sparkles(50)
+        self.heroes = random.sample(range(6), 2)
+        self.cheer = [0.0, 0.0]
 
     def handle(self, e):
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
@@ -612,38 +737,50 @@ class MenuScene(Scene):
 
     def update(self, dt):
         self.t += dt
-        for b in self.balls:
-            b[1] += 160 * dt
-            b[0] += b[2] * dt
-            b[3] += dt * 3
-            if b[1] > H + 40:
-                b[0], b[1] = random.uniform(0, W), -40
+        self.spark.update(dt)
+        for i in range(2):
+            self.cheer[i] -= dt
+            if self.cheer[i] < -random.uniform(3, 6):
+                self.cheer[i] = 1.2
 
     def draw(self, s):
         A = self.app.assets
-        s.blit(A.menu_bg, (0, 0))
-        for b in self.balls:
-            img = tf.rotate(A.ball, -math.degrees(b[3]))
-            img.set_alpha(110)
-            s.blit(img, img.get_rect(center=(b[0], b[1])))
-        l = A.big[0]
-        r = A.flipped(A.big[1])
-        s.blit(l, l.get_rect(midbottom=(210, 640 + math.sin(self.t * 3) * 6)))
-        s.blit(r, r.get_rect(midbottom=(W - 210, 640 + math.sin(self.t * 3 + 1.5) * 6)))
-        draw_title(s, 120, self.t)
+        menu_backdrop(s, self.t, dark=False, sparkles=self.spark)
+        for side, ci in enumerate(self.heroes):
+            idle, celeb = A.hero[ci]
+            img = celeb if self.cheer[side] > 0 else idle
+            hop = abs(math.sin(self.t * 9)) * 14 if self.cheer[side] > 0 else math.sin(self.t * 2.5 + side) * 3
+            if side == 1:
+                img = A.flipped(img)
+            cx = 205 if side == 0 else W - 205
+            fx.blit_glow(s, cx, 650, 150, (30, 45, 80))
+            sh = A.shadow(70)
+            s.blit(sh, sh.get_rect(center=(cx, 668)))
+            s.blit(img, img.get_rect(midbottom=(cx, 672 - hop)))
+        draw_title(s, 128, self.t)
         self.list.draw(s, 1 / FPS)
-        draw_text(s, "F11: tam ekran   M: ses aç/kapa   P: gizle", 18, (W // 2, H - 20), (200, 210, 230), outline=2, title=False)
+        draw_text(s, "F11: tam ekran   ·   M: ses   ·   P: gizle", 17, (W // 2, H - 16), (200, 210, 230),
+                  outline=2, title=False)
 
 
 class HelpScene(Scene):
+    def __init__(self, app):
+        super().__init__(app)
+        self.t = 0
+        self.spark = Sparkles(25)
+
+    def update(self, dt):
+        self.t += dt
+        self.spark.update(dt)
+
     def handle(self, e):
         if e.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
             self.app.go(MenuScene(self.app))
 
     def draw(self, s):
-        s.blit(self.app.assets.menu_bg, (0, 0))
-        panel(s, (140, 60, W - 280, H - 120), (10, 15, 35, 220), 24, GOLD)
-        draw_text(s, "KONTROLLER", 50, (W // 2, 110), GOLD, outline=4)
+        menu_backdrop(s, self.t, sparkles=self.spark)
+        draw_title(s, 62, self.t, small=True)
+        frame(s, (150, 125, W - 300, H - 150))
         rows = [
             ("İKİ PC / BİLGİSAYARA KARŞI", None),
             ("Hareket", "A / D  veya  ← / →"),
@@ -655,42 +792,47 @@ class HelpScene(Scene):
             ("1. Oyuncu", "A/D hareket, W zıpla, BOŞLUK şut, S süper"),
             ("2. Oyuncu", "←/→ hareket, ↑ zıpla, ENTER şut, ↓ süper"),
         ]
-        y = 160
+        y = 168
         for a, b in rows:
             if b is None:
-                draw_text(s, a, 26, (W // 2, y), (255, 170, 60), outline=3)
-                y += 44
-            else:
-                draw_text(s, a, 24, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
-                draw_text(s, b, 24, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
+                draw_text(s, a, 24, (W // 2, y), (255, 170, 60), outline=3)
                 y += 38
+            else:
+                draw_text(s, a, 22, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
+                draw_text(s, b, 22, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
+                y += 33
         tips = ["Şut topu yukarı kaldırır  ·  Geri giderken şut: yüksek aşırtma",
                 "Top arkanda kaldıysa ŞUT: topukla kafanın üstünden öne aşırtırsın",
                 "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER",
                 "Süper şut gelirken tam zamanında ŞUT tuşuna basarsan kurtarırsın!"]
         for k, tip in enumerate(tips):
-            draw_text(s, tip, 19, (W // 2, y + 10 + k * 27), (255, 230, 150), outline=2, title=False)
-        draw_text(s, "Geri dönmek için bir tuşa bas", 20, (W // 2, H - 80), (200, 210, 230), outline=2, title=False)
+            draw_text(s, tip, 18, (W // 2, y + 8 + k * 25), (255, 230, 150), outline=2, title=False)
+        draw_text(s, "Geri dönmek için bir tuşa bas", 18, (W // 2, H - 44), (200, 210, 230), outline=2, title=False)
 
 
 class MessageScene(Scene):
     def __init__(self, app, title, msg):
         super().__init__(app)
         self.title, self.msg = title, msg
+        self.t = 0
+
+    def update(self, dt):
+        self.t += dt
 
     def handle(self, e):
         if e.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
             self.app.go(MenuScene(self.app))
 
     def draw(self, s):
-        s.blit(self.app.assets.menu_bg, (0, 0))
-        panel(s, (240, 220, W - 480, 260), (10, 15, 35, 230), 24, (255, 90, 90))
-        draw_text(s, self.title, 44, (W // 2, 285), (255, 120, 110), outline=4)
-        y = 350
+        menu_backdrop(s, self.t)
+        draw_title(s, 110, self.t, small=True)
+        frame(s, (250, 220, W - 500, 270))
+        draw_text(s, self.title, 42, (W // 2, 285), (255, 120, 110), outline=4)
+        y = 345
         for line in self.msg.split("\n"):
             draw_text(s, line, 22, (W // 2, y), WHITE, outline=2, title=False)
             y += 32
-        draw_text(s, "Devam etmek için bir tuşa bas", 20, (W // 2, 450), (190, 200, 220), outline=2, title=False)
+        draw_text(s, "Devam etmek için bir tuşa bas", 19, (W // 2, 450), (190, 200, 220), outline=2, title=False)
 
 
 class OnlineMixin:
@@ -746,9 +888,11 @@ class HostWaitScene(Scene):
             self.app.go(SelectScene(self.app, "host", conn=conn, dur=DURATIONS[self.dur_i]))
 
     def draw(self, s):
-        s.blit(self.app.assets.menu_bg, (0, 0))
-        draw_title(s, 80, self.t, 64)
-        panel(s, (200, 180, W - 400, 420), (10, 15, 35, 225), 24, GOLD)
+        menu_backdrop(s, self.t)
+        draw_title(s, 92, self.t, small=True)
+        frame(s, (190, 180, W - 380, 430))
+        ic = self.app.assets.icons["host"]
+        s.blit(ic, ic.get_rect(center=(250, 235)))
         if self.host.error:
             draw_text(s, "MAÇ KURULAMADI", 40, (W // 2, 240), (255, 110, 100), outline=4)
             draw_text(s, self.host.error, 20, (W // 2, 300), WHITE, outline=2, title=False)
@@ -767,7 +911,10 @@ class HostWaitScene(Scene):
                   WHITE, outline=2, title=False)
         draw_text(s, "görünmezse yukarıdaki IP adresini yazarak bağlanın.", 20, (W // 2, 482), WHITE, outline=2,
                   title=False)
-        draw_text(s, "MAÇ SÜRESİ:  <  %d sn  >" % DURATIONS[self.dur_i], 28, (W // 2, 545), (120, 220, 255),
+        dur = pygame.Rect(0, 0, 380, 58)
+        dur.center = (W // 2, 552)
+        s.blit(self.app.assets.slice3("ui_btn", dur.w, dur.h), dur.topleft)
+        draw_text(s, "MAÇ SÜRESİ:  <  %d sn  >" % DURATIONS[self.dur_i], 26, (dur.centerx, dur.centery - 2), WHITE,
                   outline=3)
         draw_text(s, "ESC: geri", 18, (W // 2, H - 30), (190, 200, 220), outline=2, title=False)
 
@@ -856,31 +1003,32 @@ class JoinScene(Scene):
                 self.error = "Karşı taraf cevap vermedi."
 
     def draw(self, s):
-        s.blit(self.app.assets.menu_bg, (0, 0))
-        draw_title(s, 70, self.t, 56)
-        panel(s, (200, 150, W - 400, 500), (10, 15, 35, 225), 24, GOLD)
-        draw_text(s, "AĞDAKİ MAÇLAR", 32, (W // 2, 190), WHITE, outline=3)
+        A = self.app.assets
+        menu_backdrop(s, self.t)
+        draw_title(s, 80, self.t, small=True)
+        frame(s, (190, 150, W - 380, 520))
+        ic = A.icons["join"]
+        s.blit(ic, ic.get_rect(center=(250, 200)))
+        draw_text(s, "AĞDAKİ MAÇLAR", 32, (W // 2, 198), GOLD, outline=3)
         hosts = self.finder.hosts()
         self.rows = []
         if not hosts:
             dots = "." * (int(self.t * 2) % 4)
             draw_text(s, "Aranıyor" + dots, 24, (W // 2, 250), (180, 190, 210), outline=2, title=False)
         for i, (ip, name, port) in enumerate(hosts[:4]):
-            r = pygame.Rect(W // 2 - 300, 225 + i * 56, 600, 48)
+            r = pygame.Rect(W // 2 - 300, 232 + i * 58, 600, 52)
             hot = i == self.sel and not self.ip
-            gd.rect(s, (230, 110, 30) if hot else (40, 60, 110), r, 0, border_radius=12)
-            gd.rect(s, GOLD if hot else (120, 140, 190), r, 3, border_radius=12)
-            draw_text(s, "%s   (%s)" % (name, ip), 24, r.center, WHITE, outline=2)
+            s.blit(A.slice3("ui_btn_hot" if hot else "ui_btn_blue", r.w, r.h), r.topleft)
+            draw_text(s, "%s   (%s)" % (name, ip), 24, (r.centerx, r.centery - 2), WHITE, outline=3)
             self.rows.append((r, ip))
         y = 470
         draw_text(s, "veya IP adresini yaz:", 22, (W // 2, y), (190, 210, 235), outline=2, title=False)
-        box = pygame.Rect(W // 2 - 200, y + 22, 400, 56)
-        gd.rect(s, (245, 245, 250), box, 0, border_radius=12)
-        gd.rect(s, GOLD, box, 4, border_radius=12)
+        box = pygame.Rect(W // 2 - 210, y + 22, 420, 58)
+        gd.rect(s, (10, 14, 30), box.inflate(10, 10), 0, border_radius=16)
+        gd.rect(s, (245, 245, 250), box, 0, border_radius=14)
+        gd.rect(s, GOLD, box, 4, border_radius=14)
         cur = "|" if int(self.t * 2) % 2 == 0 else " "
-        f = get_font(34, True)
-        ts = f.render(self.ip + cur, True, DARK)
-        s.blit(ts, ts.get_rect(center=box.center))
+        draw_text(s, self.ip + cur, 32, box.center, DARK, outline=0, title=False)
         if self.connector:
             draw_text(s, "Bağlanıyor: %s ..." % self.target, 24, (W // 2, 600), GOLD, outline=3)
         elif self.wait_welcome:
@@ -912,7 +1060,7 @@ class SelectScene(Scene, OnlineMixin):
             self.pick[1] = random.randrange(6)
         if self.conn:
             self._send_pick()
-        self.cards = [pygame.Rect(48 + i * 202, 150, 182, 330) for i in range(6)]
+        self.cards = [pygame.Rect(cx - 85, 300, 170, 270) for cx in PODIUMS]
 
     def _send_pick(self):
         if self.conn:
@@ -1027,70 +1175,94 @@ class SelectScene(Scene, OnlineMixin):
 
     def draw(self, s):
         A = self.app.assets
-        s.blit(A.menu_bg, (0, 0))
-        draw_text(s, "KARAKTERİNİ SEÇ", 52, (W // 2, 70), GOLD, outline=5)
+        s.blit(A.select_bg, (0, 0))
         labels = {"bot": ("SEN", "BİLGİSAYAR"), "local2": ("1. OYUNCU", "2. OYUNCU"),
                   "host": ("SEN", "RAKİP"), "client": ("RAKİP", "SEN")}[self.mode]
-        for i, r in enumerate(self.cards):
-            sel0 = self.pick[0] == i
-            sel1 = self.pick[1] == i
-            hot = sel0 or sel1
-            rr = r.inflate(10, 10) if hot else r
-            panel(s, rr, (25, 35, 70, 225) if hot else (15, 20, 40, 200), 18)
-            if sel0 and sel1:
-                gd.rect(s, P_COLORS[0], rr, 5, border_radius=18)
-                gd.rect(s, P_COLORS[1], rr.inflate(-10, -10), 4, border_radius=14)
-            elif sel0 or sel1:
-                gd.rect(s, P_COLORS[0 if sel0 else 1], rr, 5, border_radius=18)
-            else:
-                gd.rect(s, (70, 80, 120), rr, 2, border_radius=18)
-            img = A.big[i]
-            if (sel0 and self.ready[0]) or (sel1 and self.ready[1]):
-                img = A.big_celeb[i]
-            bob = math.sin(self.t * 4 + i) * 3 if hot else 0
-            s.blit(img, img.get_rect(midbottom=(r.centerx, r.y + 238 + bob)))
-            draw_text(s, sim.DISPLAY_NAMES[i], 26, (r.centerx, r.y + 258), WHITE, outline=3)
-            for j, (lab, val) in enumerate(zip(("HIZ", "ZIPLA", "ŞUT"), sim.STAT_BARS[i])):
-                y = r.y + 284 + j * 15
-                draw_text(s, lab, 12, (r.x + 14, y), (200, 210, 230), anchor="midleft", outline=1, title=False)
-                for k in range(5):
-                    c = GOLD if k < val else (60, 70, 100)
-                    gd.rect(s, c, (r.x + 70 + k * 20, y - 5, 17, 10), 0, border_radius=3)
-            ic = A.icon_fire if sim.CHARACTERS[i]["power"] == "fire" else A.icon_ice
-            s.blit(ic, ic.get_rect(center=(r.right - 22, r.y + 22)))
-            if sel0:
-                tag = pygame.Rect(0, 0, 112, 30)
-                tag.midbottom = (r.centerx - (30 if sel1 else 0), rr.y + 2)
-                gd.rect(s, P_COLORS[0], tag, 0, border_radius=10)
-                draw_text(s, labels[0], 16, tag.center, outline=2)
-            if sel1:
-                tag = pygame.Rect(0, 0, 112, 30)
-                tag.midbottom = (r.centerx + (30 if sel0 else 0), rr.y + 2 - (32 if sel0 else 0))
-                gd.rect(s, P_COLORS[1], tag, 0, border_radius=10)
-                draw_text(s, labels[1], 16, tag.center, outline=2)
-        # hazir durumu
-        y = 540
+        draw_text(s, "KARAKTERİNİ SEÇ", 44, (W // 2, 42), GOLD, outline=5)
+        # oyuncu bilgi panelleri
         for who in (0, 1):
-            x = W // 2 - 300 if who == 0 else W // 2 + 300
+            c = self.pick[who]
+            px = 28 if who == 0 else W - 28 - 430
+            r = pygame.Rect(px, 82, 430, 190)
+            frame(s, r)
+            por = A.portrait_big[c]
+            if who == 1:
+                por = A.flipped(por)
+            pc = (r.x + 78, r.y + 98) if who == 0 else (r.right - 78, r.y + 98)
+            fx.blit_glow(s, pc[0], pc[1], 70, tuple(v // 4 for v in P_COLORS[who]))
+            gd.circle(s, P_COLORS[who], pc, 58)
+            gd.circle(s, (12, 18, 40), pc, 52)
+            s.blit(por, por.get_rect(center=(pc[0], pc[1] + 4)))
+            gd.circle(s, GOLD, pc, 58, 3)
+            tx = r.x + 150 if who == 0 else r.x + 26
+            draw_text(s, sim.DISPLAY_NAMES[c], 32, (tx, r.y + 42), WHITE, anchor="midleft", outline=3)
+            for j, (lab, val) in enumerate(zip(("HIZ", "ZIPLAMA", "ŞUT"), sim.STAT_BARS[c])):
+                y = r.y + 82 + j * 24
+                draw_text(s, lab, 15, (tx, y), (200, 215, 240), anchor="midleft", outline=2, title=False)
+                for k in range(5):
+                    col = GOLD if k < val else (45, 55, 90)
+                    gd.rect(s, col, (tx + 92 + k * 28, y - 7, 24, 14), 0, border_radius=4)
+            pw = sim.CHARACTERS[c]["power"]
+            ic = A.icon_fire if pw == "fire" else A.icon_ice
+            s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 160)))
+            draw_text(s, "ATEŞ ŞUTU" if pw == "fire" else "BUZ ŞUTU", 18, (tx + 32, r.y + 160),
+                      FIRE_C if pw == "fire" else ICE_C, anchor="midleft", outline=2)
+            # durum etiketi
             if self.mode == "bot" and who == 1:
-                txt, col = "ZORLUK: %s  (Z)" % LEVELS[self.level], (255, 200, 120)
+                st, sc = "ZORLUK: %s (Z)" % LEVELS[self.level], (255, 200, 120)
             elif self.ready[who]:
-                txt, col = "%s: HAZIR!" % labels[who], (120, 255, 140)
+                st, sc = "HAZIR!", (120, 255, 140)
             else:
-                txt, col = "%s: seçiyor..." % labels[who], (220, 220, 230)
-            draw_text(s, txt, 26, (x, y), col, outline=3)
-        pw = sim.CHARACTERS[self.pick[self.me]]["power"]
-        draw_text(s, "Süper gücün: %s" % ("ATEŞ ŞUTU (rakibi savurur)" if pw == "fire" else "BUZ ŞUTU (rakibi dondurur)"),
-                  22, (W // 2, 590), FIRE_C if pw == "fire" else ICE_C, outline=2, title=False)
+                st, sc = "seçiyor...", (220, 225, 240)
+            tag = pygame.Rect(0, 0, 250, 36)
+            tag.center = (r.centerx, r.bottom)
+            gd.rect(s, (10, 14, 30), tag.inflate(6, 6), 0, border_radius=12)
+            gd.rect(s, P_COLORS[who], tag, 0, border_radius=10)
+            draw_text(s, "%s · %s" % (labels[who], st), 17, tag.center, sc if st == "HAZIR!" else WHITE, outline=2)
+        # VS ve ayarlar
+        vs_bob = math.sin(self.t * 3) * 4
+        fx.blit_glow(s, W // 2, 160, 90, (70, 50, 10))
+        draw_text(s, "VS", 78, (W // 2, 160 + vs_bob), GOLD, outline=6)
+        draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 18,
+                  (W // 2, 232), (215, 225, 245), outline=2, title=False)
+        # podyumlar ve karakterler
+        for i, cx in enumerate(PODIUMS):
+            sel0, sel1 = self.pick[0] == i, self.pick[1] == i
+            ready = (sel0 and self.ready[0]) or (sel1 and self.ready[1])
+            if sel0 or sel1:
+                col = P_COLORS[0] if sel0 else P_COLORS[1]
+                fx.blit_glow(s, cx, 545, 105 + 6 * math.sin(self.t * 5), tuple(v // 3 for v in col))
+                gd.ellipse(s, col, (cx - 74, 532, 148, 26), 4)
+                if sel0 and sel1:
+                    gd.ellipse(s, P_COLORS[1], (cx - 64, 535, 128, 20), 3)
+            img = A.big_celeb[i] if ready else A.big[i]
+            bob = abs(math.sin(self.t * 8 + i)) * 10 if ready else (math.sin(self.t * 3 + i) * 2 if (sel0 or sel1) else 0)
+            if not (sel0 or sel1):
+                img.set_alpha(185)
+            s.blit(img, img.get_rect(midbottom=(cx, 548 - bob)))
+            img.set_alpha(255)
+            draw_text(s, sim.DISPLAY_NAMES[i], 19, (cx, 588), GOLD if (sel0 or sel1) else (210, 215, 230), outline=3)
+            # secim oklari
+            tags = [(0, labels[0])] if sel0 else []
+            if sel1:
+                tags.append((1, labels[1]))
+            for n, (who, lab) in enumerate(tags):
+                ty = 312 - n * 34 + math.sin(self.t * 5) * 3
+                tag = pygame.Rect(0, 0, 118, 28)
+                tag.center = (cx, ty)
+                gd.rect(s, P_COLORS[who], tag, 0, border_radius=10)
+                gd.polygon(s, P_COLORS[who], [(cx - 8, tag.bottom), (cx + 8, tag.bottom), (cx, tag.bottom + 9)])
+                draw_text(s, lab, 15, tag.center, outline=2)
         if self.mode == "local2":
-            hint = "1. oyuncu: A/D seç, BOŞLUK hazır    2. oyuncu: ←/→ seç, ENTER hazır"
+            hint = "1. oyuncu: A/D seç, BOŞLUK hazır    ·    2. oyuncu: ←/→ seç, ENTER hazır"
         elif self.mode == "bot":
-            hint = "←/→ seç, ENTER hazır    ↑/↓ rakip karakteri    Z zorluk    T süre"
+            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip karakteri · Z zorluk · T süre"
         else:
-            hint = "←/→ seç, ENTER hazır" + ("    T süre" if self.mode == "host" else "")
-        draw_text(s, hint, 20, (W // 2, 635), (200, 210, 230), outline=2, title=False)
-        draw_text(s, "Maç süresi: %d sn%s     ESC: geri" % (self.dur, "  (T)" if self.mode != "client" else ""), 20,
-                  (W // 2, 668), (200, 210, 230), outline=2, title=False)
+            hint = "←/→ seç · ENTER hazır" + (" · T süre" if self.mode == "host" else "")
+        panel(s, (W // 2 - 420, 640, 840, 64), (8, 12, 28, 190), 18)
+        draw_text(s, hint, 19, (W // 2, 660), (225, 232, 250), outline=2, title=False)
+        draw_text(s, "Fare ile karaktere tıklayarak da seçebilirsin   ·   ESC: geri", 15, (W // 2, 688),
+                  (170, 185, 215), outline=2, title=False)
 
 
 # ====================================================================== mac
@@ -1915,7 +2087,7 @@ class MatchScene(Scene, OnlineMixin):
         # skor tablosu
         cx = W // 2
         board = pygame.Rect(cx - 230, 10, 460, 78)
-        panel(s, board, (12, 16, 34, 235), 18, GOLD, 4)
+        frame(s, board)
         tm = snap["tm"]
         if snap["gg"]:
             tt, tc = "ALTIN GOL", GOLD
@@ -2023,7 +2195,7 @@ class MatchScene(Scene, OnlineMixin):
                 t, c = "KAZANDIN!", GOLD
             else:
                 t, c = "KAYBETTİN", (255, 110, 100)
-            panel(s, (W // 2 - 330, 180, 660, 360), (12, 16, 34, 240), 26, GOLD, 4)
+            frame(s, (W // 2 - 340, 170, 680, 380))
             draw_text(s, t, 72, (W // 2, 250), c, outline=6)
             sc = snap["sc"]
             A = self.app.assets
@@ -2050,7 +2222,7 @@ class MatchScene(Scene, OnlineMixin):
             draw_text(s, "DURAKLATILDI", 70, (W // 2, 280), GOLD, outline=6)
             draw_text(s, "ESC: devam     Q: ana menü", 28, (W // 2, 370), WHITE, outline=3, title=False)
         if self.quit_ask:
-            panel(s, (W // 2 - 280, 300, 560, 120), (12, 16, 34, 235), 20, (255, 100, 90), 4)
+            frame(s, (W // 2 - 290, 290, 580, 140))
             draw_text(s, "Maçtan çıkılsın mı?", 34, (W // 2, 335), WHITE, outline=3)
             draw_text(s, "Q: çık     ESC: oyuna dön", 24, (W // 2, 385), (220, 230, 250), outline=2, title=False)
 
@@ -2081,6 +2253,8 @@ class App:
         draw_text(self.screen, "Yükleniyor...", 40, (W // 2, H // 2))
         pygame.display.flip()
         self.assets = Assets()
+        global ASSETS
+        ASSETS = self.assets
         self.crowd = fx.Crowd(res, W)
         self.sound = Sound()
         self.clock = pygame.time.Clock()
