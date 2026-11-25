@@ -79,6 +79,11 @@ class Player:
         self.run_t = 0.0
         self.touch_cd = 0.0
         self.contact = -9.0
+        self.jump_prev = False
+        self.air_jumps = 0
+        self.charging = False
+        self.charge = 0.0
+        self.kick_power = 1.0
         self.move = 0
 
     # carpisma daireleri
@@ -144,10 +149,13 @@ class World:
         self.events.append("whistle")
 
     # ------------------------------------------------------------ girdiler
-    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed):
+    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed, kick_held=None):
         p = self.players[i]
+        jump_edge = jump and not p.jump_prev
+        p.jump_prev = jump
         if self.phase in ("ready", "over"):
             p.vx = 0
+            p.charging = False
             return
         if p.disabled:
             p.vx *= 0.85
@@ -163,14 +171,28 @@ class World:
         p.vx += (target - p.vx) * acc
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
+        jmul = 1.28 if p.jump_t > 0 else 1.0
         if jump and p.on_ground:
-            p.vy = -p.stats["jump"] * (1.28 if p.jump_t > 0 else 1.0)
+            p.vy = -p.stats["jump"] * jmul
             p.on_ground = False
+            p.air_jumps = 1
             self.events.append("jump")
-        if kick_pressed and p.kick_t <= 0:
-            p.kick_t = 0.24
-            p.kick_hit = False
-            self.events.append("swing")
+        elif jump_edge and not p.on_ground and p.air_jumps > 0:
+            # cift ziplama
+            p.air_jumps = 0
+            p.vy = -p.stats["jump"] * 0.82 * jmul
+            self.events.append("jump2:%d" % i)
+        # sut: basili tut = sarj, birak = vur (dokunus = normal sut)
+        if kick_held is None:
+            if kick_pressed and p.kick_t <= 0:
+                self._swing(p, 0.0)
+        else:
+            if kick_pressed and not p.charging and p.kick_t <= 0:
+                p.charging = True
+                p.charge = 0.0
+            if p.charging and not kick_held:
+                p.charging = False
+                self._swing(p, p.charge)
         if super_pressed and p.meter >= 100 and p.armed <= 0:
             p.meter = 0
             p.armed = 5.0
@@ -180,6 +202,13 @@ class World:
                 self._super_shot(p)
 
     # ------------------------------------------------------------ yardimcilar
+    def _swing(self, p, charge):
+        p.kick_t = 0.24
+        p.kick_hit = False
+        # 0.12 sn'den kisa basis normal sut; tam sarj %45 daha guclu
+        p.kick_power = 1.0 + 0.45 * max(0.0, (charge - 0.15) / 0.85)
+        self.events.append("swing")
+
     def _super_shot(self, p):
         b = self.ball
         p.armed = 0
@@ -277,7 +306,10 @@ class World:
                 kind = "drive"
         if not p.on_ground:
             ang -= 4
-        speed = 900 * pw * q
+        speed = 900 * pw * q * p.kick_power
+        if p.kick_power > 1.3:
+            kind = "power"
+            self.events.append("kick_hard")
         r = math.radians(ang)
         b.vx = p.dir * speed * math.cos(r) + p.vx * 0.25
         b.vy = -speed * math.sin(r) + (p.vy * 0.2 if p.vy < 0 else 0)
@@ -286,6 +318,19 @@ class World:
         b.ignore_t, b.ignore_p = 0.12, p.idx
         self.last_kind = kind
         self.events.append("kick")
+        self._touch(p)
+
+    def _smash(self, p):
+        """Havada kafa + sut: topu asagi-ileri gomer."""
+        b = self.ball
+        pw = p.stats["kick"] * p.kick_power
+        b.vx = p.dir * 880 * pw
+        b.vy = 260 if b.y < GROUND - 200 else -120
+        b.spin = 0.4
+        b.mode = 0
+        b.ignore_t, b.ignore_p = 0.15, p.idx
+        self.last_kind = "smash"
+        self.events.append("smash")
         self._touch(p)
 
     def _flick(self, p):
@@ -342,6 +387,8 @@ class World:
 
         for p in self.players:
             p.meter = min(100.0, p.meter + METER_PER_SEC * dt) if self.phase == "play" else p.meter
+            if p.charging:
+                p.charge = min(1.0, p.charge + dt / 0.75)
             for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd"):
                 v = getattr(p, attr)
                 if v > 0:
@@ -368,6 +415,7 @@ class World:
                 p.run_t += dt
             p.on_ground = False
             if p.y >= GROUND:
+                p.air_jumps = 0
                 if p.vy > 300:
                     self.events.append("land")
                 p.y = GROUND
@@ -501,6 +549,12 @@ class World:
                 continue  # sut/topuk sonrasi top vuranin govdesinden gecsin
             touched = False
             # sut
+            if p.kick_t > 0 and not p.kick_hit and not p.disabled and not p.on_ground:
+                hx, hy, hr = p.head()
+                if b.y < p.y - p.h * 0.55 and math.hypot(b.x - hx, b.y - hy) < hr + BALL_R + 14:
+                    p.kick_hit = True
+                    self._smash(p)
+                    continue
             if p.kick_t > 0 and not p.kick_hit and not p.disabled:
                 fx, fy, fr = p.foot()
                 dist = math.hypot(b.x - fx, b.y - fy)
@@ -657,7 +711,8 @@ class World:
         for p in self.players:
             ps.append([round(p.x, 1), round(p.y, 1), round(p.vx), p.face, round(p.kick_t, 2),
                        round(p.frozen, 2), round(p.meter, 1), round(p.armed, 2), 1 if p.on_ground else 0,
-                       p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2)])
+                       p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2),
+                       round(p.charge, 2) if p.charging else -1])
         ev = self.events
         self.events = []
         shk, self.shake = self.shake, 0.0

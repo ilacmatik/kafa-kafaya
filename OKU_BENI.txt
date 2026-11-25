@@ -29,7 +29,8 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
 -------------
   Hareket   : A / D  veya  Sol / Sağ ok
   Zıpla     : W  veya  Yukarı ok
-  Şut       : BOŞLUK
+  Şut       : BOŞLUK  (basılı tutup bırak = şarjlı, daha sert şut)
+  Çift zıpla: havadayken tekrar W / Yukarı ok
   Süper güç : S  veya  Aşağı ok  (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
   Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)

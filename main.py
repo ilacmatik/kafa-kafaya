@@ -70,6 +70,8 @@ GOAL_LINES = {
     "own": ["KENDİ KALESİNE! TEŞEKKÜRLER!", "ÇOK AYIP, KENDİ KALENE!", "HEDİYE GOL! SAĞ OL!", "YANLIŞ KALE KARDEŞİM!"],
     "hard": ["ÇOK SERT! TUTABİLİRSEN TUT!", "FÜZE GİBİ GİRDİ!", "FİLEYİ YIRTTI!", "BU NE VURUŞ BE!", "ELİNİ YAKARDI!"],
     "volley": ["VOLE! HAVADA YAKALADI!", "NE VOLE AMA!", "DÜŞMEDEN VURDU!"],
+    "smash": ["SMAÇ KAFA! YERE GÖMDÜ!", "YUKARIDAN ÇAKTI!", "KAFAYI GÖMDÜ GİTTİ!", "VOLEYBOL MU OYNUYORUZ?"],
+    "power": ["ŞARJLI FÜZE!", "BEKLEDİ, BEKLEDİ... BAM!", "TAM GÜÇ! FİLE DAYANMADI!", "BU ŞUTA KALE DAYANMAZ!"],
     "any": ["NASIL ATTIM AMA!", "KALECİ NEREDEYDİ?", "UYUMA, MAÇ VAR!", "TAM DOKSANA!", "BİR DAHA DENE!",
             "ÇOK KOLAY OLDU!", "BU DA MI GOL?", "DERS GİBİ GOL!"],
 }
@@ -870,7 +872,8 @@ class HelpScene(Scene):
             ("İKİ PC / BİLGİSAYARA KARŞI", None),
             ("Hareket", "A / D  veya  ← / →"),
             ("Zıpla", "W  veya  ↑"),
-            ("Şut", "BOŞLUK"),
+            ("Şut", "BOŞLUK  (basılı tut = şarjlı şut)"),
+            ("Çift zıplama", "havadayken tekrar W / ↑"),
             ("Süper güç", "S  veya  ↓  (bar dolunca)"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
@@ -886,13 +889,13 @@ class HelpScene(Scene):
                 draw_text(s, a, 22, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
                 draw_text(s, b, 22, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
                 y += 33
-        tips = ["Şut topu yukarı kaldırır  ·  Geri giderken şut: yüksek aşırtma",
+        tips = ["Havada kafa vururken ŞUT: smaç kafa  ·  Geri giderken şut: yüksek aşırtma",
                 "Top arkanda kaldıysa ŞUT: topukla kafanın üstünden öne aşırtırsın",
                 "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER",
                 "Süper şut gelirken tam zamanında ŞUT tuşuna basarsan kurtarırsın!"]
         for k, tip in enumerate(tips):
             draw_text(s, tip, 18, (W // 2, y + 8 + k * 25), (255, 230, 150), outline=2, title=False)
-        draw_text(s, "Geri dönmek için bir tuşa bas", 18, (W // 2, H - 44), (200, 210, 230), outline=2, title=False)
+        draw_text(s, "Geri dönmek için bir tuşa bas", 18, (W // 2, H - 66), (200, 210, 230), outline=2, title=False)
 
 
 class MessageScene(Scene):
@@ -1493,7 +1496,7 @@ class MatchScene(Scene, OnlineMixin):
             kp = self.counts[i][0] > self.used[i][0]
             sp = self.counts[i][1] > self.used[i][1]
             self.used[i] = list(self.counts[i])
-        return h["l"], h["r"], h["j"], kp, sp
+        return h["l"], h["r"], h["j"], kp, sp, h["k"]
 
     # -------------------------------------------------- guncelleme
     def update(self, dt):
@@ -1548,7 +1551,8 @@ class MatchScene(Scene, OnlineMixin):
                     kp = r.get("k", 0) > self.used[1][0]
                     sp = r.get("s", 0) > self.used[1][1]
                     self.used[1] = [r.get("k", 0), r.get("s", 0)]
-                w.apply_input(1, bool(r.get("l")), bool(r.get("r")), bool(r.get("j")), kp, sp)
+                w.apply_input(1, bool(r.get("l")), bool(r.get("r")), bool(r.get("j")), kp, sp,
+                              bool(r.get("kh", 0)) if "kh" in r else None)
             w.step(STEP)
             first = False
         snap = w.snapshot()
@@ -1563,7 +1567,7 @@ class MatchScene(Scene, OnlineMixin):
     def _update_client(self, dt):
         h = self._held(KEYS_SOLO)
         self.conn.send({"t": "in", "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
-                        "k": self.counts[1][0], "s": self.counts[1][1]})
+                        "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"])})
         now = time.time()
         msgs = self.pending + self.conn.poll()
         self.pending = []
@@ -1674,6 +1678,24 @@ class MatchScene(Scene, OnlineMixin):
                 self.flashes.append([bx, by, 0.12])
                 if bx < 330 or bx > W - 330:
                     crowd.kick(0.45)
+            elif name == "jump2":
+                who = int(ev.split(":")[1]) if ":" in ev else 0
+                pp = snap["p"][who]
+                snd.play("jump", 0.02)
+                self._ring(pp[0], pp[1] - 4, 40, (200, 235, 255), 0.25)
+                self._burst(pp[0], pp[1], 10, [(220, 240, 255), WHITE], 160, 0.35, 3, 200, "snow", 0)
+            elif name == "smash":
+                snd.play("block", 0.05)
+                self._burst(bx, by, 18, [WHITE, GOLD, (255, 200, 120)], 380, 0.4, 3, 300, "spark", 0)
+                self._ring(bx, by, 70, GOLD, 0.3)
+                self.flashes.append([bx, by, 0.15])
+                self.shake = max(self.shake, 0.2)
+                self.app.crowd.kick(0.5)
+            elif name == "kick_hard":
+                snd.play("fire_hit", 0.1, 0.6)
+                self._ring(bx, by, 90, (255, 230, 150), 0.3)
+                self._burst(bx, by, 16, [(255, 240, 180), GOLD], 420, 0.35, 3, 200, "spark", 0)
+                self.shake = max(self.shake, 0.15)
             elif name == "pop":
                 snd.play("head", 0.1)
                 self._burst(bx, by, 10, [(255, 255, 255), (255, 240, 180)], 260, 0.35, 3, 300, "spark", 0)
@@ -1697,7 +1719,7 @@ class MatchScene(Scene, OnlineMixin):
                     kind, speed, own = parts[2], int(parts[3]), int(parts[4])
                 if own:
                     cat = "own"
-                elif kind in ("super", "head", "lob", "flick", "volley"):
+                elif kind in ("super", "head", "lob", "flick", "volley", "smash", "power"):
                     cat = kind
                 elif speed > 760:
                     cat = "hard"
@@ -2052,7 +2074,7 @@ class MatchScene(Scene, OnlineMixin):
     def _player_img(self, char, p, snap, i):
         """Duruma gore uygun pozu sec."""
         A = self.app.assets
-        x, y, vx, face, kick_t, frozen, meter, armed, on_ground, _, speed_t, jump_t, stun, run_t = p
+        x, y, vx, face, kick_t, frozen, meter, armed, on_ground, _, speed_t, jump_t, stun, run_t = p[:14]
         poses = A.poses[char]
         ice = frozen > 0
         celebrate = (snap["ph"] == "goal" and snap.get("scr") == i) or (snap["ph"] == "over" and snap["win"] == i)
@@ -2069,7 +2091,7 @@ class MatchScene(Scene, OnlineMixin):
 
     def _draw_player(self, s, i, p, snap):
         A = self.app.assets
-        x, y, vx, face, kick_t, frozen, meter, armed, on_ground, char, speed_t, jump_t, stun, run_t = p
+        x, y, vx, face, kick_t, frozen, meter, armed, on_ground, char, speed_t, jump_t, stun, run_t = p[:14]
         img, pose, akey = self._player_img(char, p, snap, i)
         flip = face < 0
         if flip:
@@ -2142,6 +2164,12 @@ class MatchScene(Scene, OnlineMixin):
             label = "P%d" % (i + 1)
         elif i == self.me:
             label = "SEN"
+        charge = p[14] if len(p) > 14 else -1
+        if charge >= 0:
+            cb = pygame.Rect(0, 0, 70, 12)
+            cb.center = (x, y - h - 58 - bob)
+            col = (120, 230, 120) if charge < 0.5 else ((255, 200, 60) if charge < 0.95 else (255, 90, 50))
+            meter(s, cb, charge, col, glow=charge >= 0.95)
         if label:
             ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
             tg = pygame.Rect(0, 0, 52 if len(label) <= 3 else 64, 22)
