@@ -212,7 +212,7 @@ def pill(surf, rect, color, border=(12, 14, 34), radius=None, gloss=True):
     surf.blit(img, r.topleft)
 
 
-def meter(surf, rect, frac, color, right=False, glow=False):
+def draw_meter(surf, rect, frac, color, right=False, glow=False):
     """Yuvarlak dolum cubugu."""
     r = pygame.Rect(rect)
     pill(surf, r, (22, 28, 52), gloss=False)
@@ -2169,7 +2169,7 @@ class MatchScene(Scene, OnlineMixin):
             cb = pygame.Rect(0, 0, 70, 12)
             cb.center = (x, y - h - 58 - bob)
             col = (120, 230, 120) if charge < 0.5 else ((255, 200, 60) if charge < 0.95 else (255, 90, 50))
-            meter(s, cb, charge, col, glow=charge >= 0.95)
+            draw_meter(s, cb, charge, col, glow=charge >= 0.95)
         if label:
             ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
             tg = pygame.Rect(0, 0, 52 if len(label) <= 3 else 64, 22)
@@ -2270,7 +2270,7 @@ class MatchScene(Scene, OnlineMixin):
             else:
                 bar.topleft = (px + 52, 50)
             full = meter_v >= 100 or armed > 0
-            meter(s, bar, meter_v / 100, col, right=(i == 1), glow=full and int(self.t * 6) % 2 == 0)
+            draw_meter(s, bar, meter_v / 100, col, right=(i == 1), glow=full and int(self.t * 6) % 2 == 0)
             ic = A.icon_fire if pw == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(bar.left - 18 if i == 0 else bar.right + 18, bar.centery)))
             local = self.mode == "local2" or i == self.me

@@ -35,6 +35,13 @@ t0 = time.perf_counter()
 run(app, m, 60 * 20, keys=True)
 print("ortalama kare suresi: %.1f ms" % ((time.perf_counter() - t0) / (60 * 20) * 1000))
 w = m.world
+# basili tutulan sut (sarj cubugu), cift ziplama, smac yollari
+for f in range(40):
+    w.apply_input(0, False, True, f % 20 < 3, f == 0, False, f < 30)
+    w.step(1 / 60)
+    m.snap = w.snapshot()
+    m._process(m.snap)
+    m.draw(app.screen)
 w.players[1].frozen = 2
 w.players[0].armed = 3
 w.ball.mode = 1
