@@ -34,13 +34,14 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
 3) KONTROLLER
 -------------
   Hareket   : A / D  veya  Sol / Sağ ok
-  Zıpla     : W  veya  Yukarı ok
+  Zıpla     : W  veya  Yukarı ok (kısa bas = alçak, uzun bas = yüksek)
   Şut       : BOŞLUK  (basılı tutup bırak = şarjlı, daha sert şut)
   Çift zıpla: havadayken tekrar W / Yukarı ok
   Aşırtma   : şut atarken S / Aşağı ok basılı olsun
   Süper güç : S / Aşağı ok'a iki kez hızlıca bas (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
-  Omuz at   : E  veya  Sağ CTRL (ağır karakter hafifi savurur)
+  Omuz at   : E  veya  Sağ CTRL, dururken (ağır karakter hafifi savurur)
+  Kayarak müdahale: koşarken E (topu kapar, rakibi düşürür)
   Rövaşata  : havadayken top kafanın üstündeyse şut
   Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)
 

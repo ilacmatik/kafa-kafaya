@@ -128,7 +128,7 @@ def mirror_snap(m):
     for ev in m.get("ev", []):
         parts = ev.split(":")
         n = parts[0]
-        if n in ("goal", "jump2", "shoulder", "bump", "bicycle", "pen_goal", "pen_miss", "pen_save", "pen_lock",
+        if n in ("goal", "jump2", "shoulder", "bump", "bicycle", "slide", "trip", "net", "pen_goal", "pen_miss", "pen_save", "pen_lock",
                  "magnet", "glove",
                  "quake", "bolt") and len(parts) > 1:
             parts[1] = str(1 - int(parts[1]))
@@ -1269,7 +1269,7 @@ class HelpScene(Scene):
             ("Aşırtma", "Şut atarken S / ↓ basılı olsun"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
             ("Süper güç", "S / ↓ iki kez hızlı bas  (bar dolunca)"),
-            ("Omuz at", "E  veya  Sağ CTRL"),
+            ("Omuz / kayarak müdahale", "E (dururken omuz, koşarken kayma)"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
             ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S aşırtma, S-S süper, E omuz"),
@@ -1926,6 +1926,7 @@ class MatchScene(Scene, OnlineMixin):
         self.over_t = 0.0
         self.me = 1 if mode == "client" else 0
         self.mirror = mode == "client" and app.mirror
+        self.pred = None
         if self.mirror:
             self.me = 0
             self.chars = self.chars[::-1]
@@ -2181,6 +2182,54 @@ class MatchScene(Scene, OnlineMixin):
                     ps.append(pb)
             snap["p"] = ps
             self.snap = snap
+        self._predict(dt)
+
+    def _predict(self, dt):
+        """Istemci tahmini: kendi karakterin agdan cevap beklemeden aninda hareket eder."""
+        me = self.me
+        srv = self.snaps[-1][1]["p"][me]
+        ph = self.snaps[-1][1]["ph"]
+        busy = (srv[5] > 0 or srv[12] > 0 or (len(srv) > 17 and srv[17] > 0) or (len(srv) > 16 and srv[16] > 0)
+                or (len(srv) > 19 and srv[19] > 0))
+        pr = self.pred
+        if ph != "play" or busy or pr is None:
+            self.pred = [srv[0], srv[1], srv[2], 0.0, bool(srv[8])]
+            return
+        st = sim.CHARACTERS[srv[9]]
+        h = self._held(KEYS_SOLO)
+        move = (1 if h["r"] else 0) - (1 if h["l"] else 0)
+        d = 1 if me == 0 else -1
+        if self.mirror:
+            d = 1
+        spd = st["speed"] * (1.45 if srv[10] > 0 else 1.0)
+        back = move != 0 and move != d
+        if back:
+            spd *= sim.BACK_SPEED
+        acc = (0.45 if back else 0.35) if pr[4] else (0.26 if back else 0.18)
+        k = min(1.0, dt * 60)
+        pr[2] += (move * spd - pr[2]) * acc * k
+        if h["j"] and pr[4]:
+            pr[3] = -st["jump"] * (1.28 if srv[11] > 0 else 1.0)
+            pr[4] = False
+        pr[3] += sim.PLAYER_G * dt
+        pr[0] = max(28, min(W - 28, pr[0] + pr[2] * dt))
+        pr[1] += pr[3] * dt
+        if pr[1] >= sim.GROUND:
+            pr[1], pr[3], pr[4] = sim.GROUND, 0.0, True
+        # sunucuyla yumusak uzlasma
+        ex, ey = srv[0] - pr[0], srv[1] - pr[1]
+        if abs(ex) > 90 or abs(ey) > 90:
+            pr[0], pr[1], pr[3], pr[4] = srv[0], srv[1], 0.0, bool(srv[8])
+        else:
+            pr[0] += ex * 0.12
+            pr[1] += ey * 0.12
+            if srv[8] and pr[1] > sim.GROUND - 3:
+                pr[4] = True
+        snap = dict(self.snap)
+        ps = [list(p) for p in snap["p"]]
+        ps[me][0], ps[me][1], ps[me][2], ps[me][8] = pr[0], pr[1], pr[2], 1 if pr[4] else 0
+        snap["p"] = ps
+        self.snap = snap
 
     # -------------------------------------------------- efektler
     def _say(self, txt, color, dur=1.6):
@@ -2296,6 +2345,25 @@ class MatchScene(Scene, OnlineMixin):
                 self.pops.append(["fx_starburst", bx, by, 120, 0.35])
                 self.crowd.kick(0.8)
                 self.shake = max(self.shake, 0.25)
+            elif name == "slide":
+                who = int(ev.split(":")[1])
+                pp = snap["p"][who]
+                snd.play("swing", 0.05)
+                self._dust(pp[0], pp[1], 10, 60)
+            elif name == "trip":
+                who = int(ev.split(":")[1])
+                pp = snap["p"][who]
+                snd.play("land", 0.05)
+                snd.play("ooh", 0.5, 0.6)
+                self._burst(pp[0], pp[1] - 40, 10, [WHITE, GOLD], 220, 0.35, 3, 300, "spark", 0)
+                if random.random() < 0.4:
+                    self.ref_pose = ["card", 1.8]
+                    self.ref_target = max(160, min(W - 160, pp[0] + (90 if pp[0] < W / 2 else -90)))
+            elif name == "net":
+                parts_ = ev.split(":")
+                side = int(parts_[1])
+                self.ripple = [side, float(parts_[2]), 0.0]
+                snd.play("bounce", 0.1, 0.5)
             elif name == "shoulder":
                 snd.play("swing", 0.05, 1.0)
             elif name == "bump":
@@ -3232,6 +3300,9 @@ class MatchScene(Scene, OnlineMixin):
         poses = A.poses[char]
         ice = frozen > 0
         celebrate = (snap["ph"] == "goal" and snap.get("scr") == i) or (snap["ph"] == "over" and snap["win"] == i)
+        slide = p[19] if len(p) > 19 else 0
+        if slide > 0:
+            return tf.rotate(A.kick[char], 28), "slide", "kick"
         bike = p[16] if len(p) > 16 else 0
         shoulder = p[17] if len(p) > 17 else 0
         if bike > 0:

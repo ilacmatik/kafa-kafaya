@@ -91,6 +91,10 @@ class Player:
         self.magnet_t = 0.0
         self.shoulder_t = 0.0
         self.shoulder_cd = 0.0
+        self.slide_t = 0.0
+        self.sl_dir = 1
+        self.sl_hit = False
+        self.jump_cut = True
         self.sh_dir = 1
         self.sh_hit = False
         self.bike_t = 0.0
@@ -163,6 +167,7 @@ class World:
         self.wind = random.choice((-1, 1)) * random.uniform(150, 230) if weather == "wind" else 0.0
         self.wind_t = random.uniform(10, 16)
         self.pens_on = pens
+        self.net_cd = 0.0
         self.pen = None
         self.stats = {"shots": [0, 0], "heads": [0, 0], "saves": [0, 0], "fast": [0, 0], "poss": [0.0, 0.0]}
         self.events.append("whistle")
@@ -203,13 +208,27 @@ class World:
         if self.weather == "rain" and p.on_ground:
             acc *= 0.5   # islak zemin: kayar
         p.vx += (target - p.vx) * acc
-        if shoulder and p.shoulder_cd <= 0 and p.on_ground:
+        if shoulder and p.shoulder_cd <= 0 and p.on_ground and p.slide_t <= 0:
             o = self.players[1 - i]
-            p.sh_dir = move if move else (1 if o.x > p.x else -1)
-            p.shoulder_t = 0.28
-            p.shoulder_cd = 1.8
-            p.sh_hit = False
-            self.events.append("shoulder:%d" % i)
+            if move and abs(p.vx) > 150:
+                # kosarken: kayarak mudahale
+                p.sl_dir = move
+                p.slide_t = 0.5
+                p.shoulder_cd = 1.6
+                p.sl_hit = False
+                self.events.append("slide:%d" % i)
+            else:
+                p.sh_dir = move if move else (1 if o.x > p.x else -1)
+                p.shoulder_t = 0.28
+                p.shoulder_cd = 1.8
+                p.sh_hit = False
+                self.events.append("shoulder:%d" % i)
+        if p.slide_t > 0:
+            k = p.slide_t / 0.5
+            p.vx = p.sl_dir * (120 + 560 * k)
+            p.move = 0
+            p.jump_prev = jump
+            return
         if p.shoulder_t > 0:
             p.vx = p.sh_dir * 640
         p.move = move
@@ -220,7 +239,12 @@ class World:
             p.vy = -p.stats["jump"] * jmul
             p.on_ground = False
             p.air_jumps = 1
+            p.jump_cut = False
             self.events.append("jump")
+        elif not jump and not p.on_ground and p.vy < -180 and not p.jump_cut:
+            # tusu erken birakirsan alcak ziplarsin
+            p.vy *= 0.55
+            p.jump_cut = True
         elif jump_edge and not p.on_ground and p.air_jumps > 0:
             # cift ziplama
             p.air_jumps = 0
@@ -472,10 +496,17 @@ class World:
         self._touch(p)
 
     def _goal_rects(self):
+        r = ROOF_T / 2
         return [
-            (0, GOAL_TOP - ROOF_T, GOAL_D + 20, GOAL_TOP),
-            (W - GOAL_D - 20, GOAL_TOP - ROOF_T, W, GOAL_TOP),
+            (0, GOAL_TOP - ROOF_T, GOAL_D + 20 - r, GOAL_TOP),
+            (W - GOAL_D - 20 + r, GOAL_TOP - ROOF_T, W, GOAL_TOP),
         ]
+
+    def _post_tips(self):
+        """Ust diregin uc kismi yuvarlak: kose vuruslari aciya gore seker."""
+        r = ROOF_T / 2 + 1
+        y = GOAL_TOP - ROOF_T / 2
+        return [(GOAL_D + 20 - r, y, r), (W - GOAL_D - 20 + r, y, r)]
 
     # ------------------------------------------------------------ adim
     def step(self, dt):
@@ -549,7 +580,7 @@ class World:
             if p.charging:
                 p.charge = min(1.0, p.charge + dt / 0.4)
             for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd", "magnet_t",
-                         "shoulder_t", "shoulder_cd", "bike_t"):
+                         "shoulder_t", "shoulder_cd", "bike_t", "slide_t"):
                 v = getattr(p, attr)
                 if v > 0:
                     setattr(p, attr, max(0.0, v - dt))
@@ -623,6 +654,15 @@ class World:
                     p.vx *= 0.25
                     p.shoulder_t = 0
                     self.events.append("bump:%d" % o.idx)
+            for p, o, d in ((a, b, s), (b, a, -s)):
+                if p.slide_t > 0 and not p.sl_hit and p.sl_dir == d and o.on_ground:
+                    p.sl_hit = True
+                    o.stun = max(o.stun, 0.8)
+                    o.vy = -260
+                    o.on_ground = False
+                    o.vx = d * 180
+                    o.charging = False
+                    self.events.append("trip:%d" % o.idx)
 
     def _step_ball(self, dt):
         b = self.ball
@@ -631,6 +671,8 @@ class World:
                 b.hit_cd[i] -= dt
         if b.ignore_t > 0:
             b.ignore_t -= dt
+        if self.net_cd > 0:
+            self.net_cd -= dt
         if b.squeeze_cd > 0:
             b.squeeze_cd -= dt
         mag = None
@@ -670,6 +712,12 @@ class World:
                 if abs(b.vy) < 60:
                     b.vy = 0
             b.vx *= (1 - {"rain": 0.45, "snow": 2.6}.get(self.weather, 1.1) * dt)
+            if abs(b.vy) < 40 and b.spin:
+                # yerde yuvarlanma: ust falso hizlandirir, ters falso frenler
+                b.vx += (1 if b.vx >= 0 else -1) * b.spin * 140 * dt
+                b.spin *= (1 - 2.2 * dt)
+            if abs(b.vx) < 6 and abs(b.vy) < 1:
+                b.vx = 0
             if b.mode:
                 b.mode = 0
         # tavan
@@ -689,11 +737,34 @@ class World:
                     b.mode = 0
                 if not inside_goal:
                     self.events.append("bounce")
-        # kale catisi / ust direk
+        # kale catisi / ust direk (yuvarlak uc)
         for r in self._goal_rects():
             if self._rect_vs_ball(*r):
                 if b.mode:
                     b.mode = 0
+        for cx, cy, cr in self._post_tips():
+            spd = math.hypot(b.vx, b.vy)
+            if self._circle_vs_ball(cx, cy, cr, 0, 0, 0.72):
+                b.spin = -b.spin * 0.5
+                if b.mode:
+                    b.mode = 0
+                if spd > 250:
+                    self.events.append("post")
+        # file: kale icinde top yavaslar, file esner
+        for side in (0, 1):
+            inside = (b.x < GOAL_D - 4) if side == 0 else (b.x > W - GOAL_D + 4)
+            if inside and b.y > GOAL_TOP:
+                damp = 1 - min(0.9, 5.5 * dt)
+                b.vx *= damp
+                b.spin *= damp
+                if b.y - BALL_R < GOAL_TOP + 2 and b.vy < 0:
+                    b.y = GOAL_TOP + BALL_R + 2
+                    b.vy = abs(b.vy) * 0.2
+                back = BALL_R + 4 if side == 0 else W - BALL_R - 4
+                if (side == 0 and b.x < back) or (side == 1 and b.x > back):
+                    if abs(b.vx) > 120 and self.net_cd <= 0:
+                        self.events.append("net:%d:%d" % (side, int(b.y)))
+                        self.net_cd = 0.4
 
         # buz kalkani
         for i in range(2):
@@ -748,6 +819,29 @@ class World:
                 continue  # sut/topuk sonrasi top vuranin govdesinden gecsin
             touched = False
             # sut
+            if p.slide_t > 0 and not p.sl_hit and b.y > GROUND - 70:
+                fx_ = p.x + p.sl_dir * 40
+                if abs(b.x - fx_) < 46:
+                    p.sl_hit = True
+                    b.vx = p.sl_dir * 560
+                    b.vy = -200
+                    b.spin = 0.2
+                    b.ignore_t, b.ignore_p = 0.25, p.idx
+                    self.last_kind = "body"
+                    self.events.append("kick")
+                    self._touch(p)
+                    continue
+            # top surme: kosarken yerdeki top ayagin onunde kalir
+            if (p.on_ground and p.move and abs(p.vx) > 120 and p.kick_t <= 0 and not p.disabled
+                    and b.y > GROUND - BALL_R - 8 and abs(b.vy) < 120 and not b.mode
+                    and 8 < (b.x - p.x) * p.move < 74 and abs(b.vx - p.vx) < 320):
+                tx = p.x + p.move * 50
+                b.vx += ((tx - b.x) * 7 + p.vx - b.vx) * min(1.0, dt * 10)
+                b.spin = 0
+                if self.last_touch != p.idx:
+                    self._touch(p)
+                self.last_touch = p.idx
+                continue
             if p.kick_t > 0 and not p.kick_hit and not p.disabled and not p.on_ground:
                 hx, hy, hr = p.head()
                 back = (b.x - p.x) * p.dir
@@ -784,6 +878,10 @@ class World:
                 b.spin *= 0.3
                 if p.vy < -50:
                     b.vy += p.vy * 0.35
+                if p.move:
+                    # kafaya yon ver
+                    b.vx += p.move * 260
+                    b.vx = clamp(b.vx, -1100, 1100)
                 if abs(b.vx) + abs(b.vy) > 450:
                     self.events.append("head")
                     if p.touch_cd <= 0:
@@ -1027,7 +1125,8 @@ class World:
                        round(p.frozen, 2), round(p.meter, 1), round(p.armed, 2), 1 if p.on_ground else 0,
                        p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2),
                        round(p.charge, 2) if p.charging else -1, 1 if p.lob else 0,
-                       round(p.bike_t, 2), round(p.shoulder_t, 2), 1 if p.h < p.h0 - 1 else 0])
+                       round(p.bike_t, 2), round(p.shoulder_t, 2), 1 if p.h < p.h0 - 1 else 0,
+                       round(p.slide_t, 2)])
         ev = self.events
         self.events = []
         shk, self.shake = self.shake, 0.0
@@ -1152,4 +1251,9 @@ class Bot:
             self.shoulder = random.random() < 0.02 * (self.level + 1)
         else:
             self.shoulder = False
+        if jump:
+            self.jump_hold = 14
+        if self.jump_hold > 0:
+            self.jump_hold -= 1
+            jump = True
         return left, right, jump, kick, sup
