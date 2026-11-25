@@ -3,3 +3,6 @@ build/
 dist/
 *.spec
 assets/version.txt
+!buildozer.spec
+bin/
+.buildozer/
