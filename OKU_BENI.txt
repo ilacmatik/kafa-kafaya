@@ -77,3 +77,21 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
 Exe yapmadan denemek için (Python kuruluysa):
   pip install pygame
   python main.py
+
+==================== ANDROID (TELEFON) ====================
+Kurulum: Surum sayfasindaki KafaKafaya.apk dosyasini telefona indirip acin.
+"Bilinmeyen uygulamalari yukle" iznini verin. Play Protect uyari verirse
+"Yine de yukle" deyin.
+
+Dokunmatik kontroller (mac icinde):
+  Sol alt: sola / saga (parmagi kaydirarak yon degistirebilirsiniz)
+  Sag alt: SUT (basili tut = guclu), ZIPLA, ASIRT, OMUZ, SUPER
+  Ustte ortada: duraklat. Telefonun geri tusu = ESC.
+
+Telefonla birlikte oynamak:
+  - Ayni Wi-Fi: biri MAC KUR, oteki MACA KATIL.
+  - Wi-Fi yoksa: biri hotspot acar, digeri baglanir, sonra ayni sekilde.
+  - Farkli yerlerdeyseniz: ikiniz de Tailscale uygulamasini kurup ayni
+    agda olun. MAC KUR ekraninda 100.x.x.x ile baslayan IP'yi digeri
+    MACA KATIL > IP yaz kismina girer.
+  Telefon ve bilgisayar birbirine karsi da oynayabilir (ayni surum olmali).
