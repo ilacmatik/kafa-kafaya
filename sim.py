@@ -85,6 +85,8 @@ class Player:
         self.charge = 0.0
         self.kick_power = 1.0
         self.magnet_t = 0.0
+        self.lob = False
+        self.lob_shot = False
         self.move = 0
 
     # carpisma daireleri
@@ -174,6 +176,11 @@ class World:
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         jmul = 1.28 if p.jump_t > 0 else 1.0
+        if kick_held is not None and p.charging and kick_held:
+            # sut tusu basiliyken yukari: ziplama yerine asirtma sutu hazirla
+            if jump:
+                p.lob = True
+            jump = jump_edge = False
         if jump and p.on_ground:
             p.vy = -p.stats["jump"] * jmul
             p.on_ground = False
@@ -242,6 +249,8 @@ class World:
     def _swing(self, p, charge):
         p.kick_t = 0.24
         p.kick_hit = False
+        p.lob_shot = p.lob
+        p.lob = False
         # 0.12 sn'den kisa basis normal sut; tam sarj %45 daha guclu
         p.kick_power = 1.0 + 0.45 * max(0.0, (charge - 0.15) / 0.85)
         self.events.append("swing")
@@ -335,7 +344,10 @@ class World:
             ang, kind = 16.0, "volley"   # havadaki top: vole
         spin = 0.1
         mv = p.move * p.dir
-        if mv < 0:
+        if p.lob_shot:
+            p.lob_shot = False
+            ang, q, spin, kind = 64.0, q * 1.0, -0.8, "lob"
+        elif mv < 0:
             ang, q, spin, kind = 66.0, q * 0.9, -0.9, "lob"            # geri giderken: yuksek asirtma
         elif mv > 0 and abs(p.vx) > 150:
             ang, q, spin = ang - 8, q * 1.08, 0.6                       # kosarak: daha sert
@@ -425,7 +437,7 @@ class World:
         for p in self.players:
             p.meter = min(100.0, p.meter + METER_PER_SEC * dt) if self.phase == "play" else p.meter
             if p.charging:
-                p.charge = min(1.0, p.charge + dt / 0.75)
+                p.charge = min(1.0, p.charge + dt / 0.4)
             for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd", "magnet_t"):
                 v = getattr(p, attr)
                 if v > 0:
@@ -770,7 +782,7 @@ class World:
             ps.append([round(p.x, 1), round(p.y, 1), round(p.vx), p.face, round(p.kick_t, 2),
                        round(p.frozen, 2), round(p.meter, 1), round(p.armed, 2), 1 if p.on_ground else 0,
                        p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2),
-                       round(p.charge, 2) if p.charging else -1])
+                       round(p.charge, 2) if p.charging else -1, 1 if p.lob else 0])
         ev = self.events
         self.events = []
         shk, self.shake = self.shake, 0.0

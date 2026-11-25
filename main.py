@@ -1017,6 +1017,7 @@ class HelpScene(Scene):
             ("Hareket", "A / D  veya  ← / →"),
             ("Zıpla", "W  veya  ↑"),
             ("Şut", "BOŞLUK  (basılı tut = şarjlı şut)"),
+            ("Aşırtma", "BOŞLUK basılıyken W / ↑, sonra bırak"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
             ("Süper güç", "S  veya  ↓  (bar dolunca)"),
             ("Gizle", "P  (küçült + sesi kapat)"),
@@ -2474,6 +2475,11 @@ class MatchScene(Scene, OnlineMixin):
             cb.center = (x, y - h - 58 - bob)
             col = (120, 230, 120) if charge < 0.5 else ((255, 200, 60) if charge < 0.95 else (255, 90, 50))
             draw_meter(s, cb, charge, col, glow=charge >= 0.95)
+            if len(p) > 15 and p[15]:
+                ax_, ay_ = cb.right + 14, cb.centery
+                gd.polygon(s, (12, 14, 34), [(ax_ - 10, ay_ + 4), (ax_ + 10, ay_ + 4), (ax_, ay_ - 12)])
+                gd.polygon(s, (120, 230, 255), [(ax_ - 7, ay_ + 2), (ax_ + 7, ay_ + 2), (ax_, ay_ - 8)])
+                draw_text(s, "AŞIRTMA", 12, (cb.centerx, cb.y - 10), (150, 235, 255), outline=2)
         if label:
             ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
             tg = pygame.Rect(0, 0, 52 if len(label) <= 3 else 64, 22)
