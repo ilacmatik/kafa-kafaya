@@ -2478,7 +2478,6 @@ class MatchScene(Scene, OnlineMixin):
         spots = self.crowd.banner_spots
         if not A.banner_raw:
             return out
-        import numpy as _np  # noqa
         for side in (0, 1):
             c = self.chars[side]
             col = fx.TEAM["k%d" % c][0]
@@ -3201,7 +3200,7 @@ class CupScene(Scene):
     def draw(self, s):
         A = self.app.assets
         menu_backdrop(s, self.t, sparkles=self.spark)
-        if self.champion:
+        if self.champion or self.cup["stage"] >= len(CUP_STAGES):
             return
         draw_title(s, 62, self.t, small=True)
         frame(s, (90, 120, W - 180, 520))
