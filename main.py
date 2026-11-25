@@ -1412,6 +1412,10 @@ class MatchScene(Scene, OnlineMixin):
                 self.flashes.append([bx, by, 0.12])
                 if bx < 330 or bx > W - 330:
                     crowd.kick(0.45)
+            elif name == "pop":
+                snd.play("head", 0.1)
+                self._burst(bx, by, 10, [(255, 255, 255), (255, 240, 180)], 260, 0.35, 3, 300, "spark", 0)
+                self._ring(bx, by, 50, (255, 255, 255), 0.25)
             elif name == "head":
                 self._burst(bx, by, 6, [(255, 255, 255)], 180, 0.25, 3, 300, "spark", 0)
                 self._ring(bx, by, 34, (255, 255, 230), 0.22)

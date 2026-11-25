@@ -76,6 +76,7 @@ class Player:
         self.armed = 0.0
         self.run_t = 0.0
         self.touch_cd = 0.0
+        self.contact = -9.0
         self.move = 0
 
     # carpisma daireleri
@@ -111,6 +112,7 @@ class Ball:
         self.spin = 0.0        # + ust falso (yere dusunce ileri kacar), - ters falso
         self.ignore_t = 0.0
         self.ignore_p = -1
+        self.squeeze_cd = 0.0
         self.mode = 0          # 0 normal, 1 ates, 2 buz
         self.mode_t = 0.0
         self.owner = -1        # super sutu atan
@@ -134,6 +136,7 @@ class World:
         self.pu_timer = random.uniform(7, 11)
         self.shield = [0.0, 0.0]   # kendi kalesini koruyan buz duvari
         self.scorer = -1
+        self.clock = 0.0
         self.last_kind = "shot"
         self.shake = 0.0
         self.events.append("whistle")
@@ -190,6 +193,7 @@ class World:
         self.shake = 0.25
 
     def _touch(self, p):
+        p.contact = self.clock
         if p.touch_cd <= 0:
             p.meter = min(100.0, p.meter + METER_PER_TOUCH)
             p.touch_cd = 0.35
@@ -300,6 +304,7 @@ class World:
 
     # ------------------------------------------------------------ adim
     def step(self, dt):
+        self.clock += dt
         if self.phase == "over":
             self._step_players(dt)
             return
@@ -375,8 +380,8 @@ class World:
                         p.vy = 0
         # oyuncu - oyuncu
         dx = b.x - a.x
-        if abs(dx) < 62 and (a.y - a.h < b.y and b.y - b.h < a.y):
-            over = 62 - abs(dx)
+        if abs(dx) < 72 and (a.y - a.h < b.y and b.y - b.h < a.y):
+            over = 72 - abs(dx)
             s = 1 if dx >= 0 else -1
             a.x -= s * over / 2
             b.x += s * over / 2
@@ -390,6 +395,8 @@ class World:
                 b.hit_cd[i] -= dt
         if b.ignore_t > 0:
             b.ignore_t -= dt
+        if b.squeeze_cd > 0:
+            b.squeeze_cd -= dt
         if b.mode:
             b.mode_t -= dt
             if b.mode_t <= 0:
@@ -484,7 +491,7 @@ class World:
                     continue
             if b.mode and b.owner != p.idx:
                 continue
-            if b.ignore_t > 0 and b.ignore_p == p.idx:
+            if b.ignore_t > 0 and b.ignore_p in (p.idx, -2):
                 continue  # sut/topuk sonrasi top vuranin govdesinden gecsin
             touched = False
             # sut
@@ -522,6 +529,19 @@ class World:
                     self.last_kind = "body"
                 if self._touch(p):
                     pass
+        # iki oyuncunun arasinda sikisan top yukari firlar (itisip gol atilmasin)
+        pa, pc = self.players
+        if (not b.mode and b.squeeze_cd <= 0 and (b.x - pa.x) * (b.x - pc.x) < 0
+                and abs(pa.x - pc.x) < 150 and b.y > GROUND - 125
+                and self.clock - pa.contact < 0.25 and self.clock - pc.contact < 0.25):
+            b.y = min(b.y, GROUND - BALL_R - 4)
+            b.vy = -780
+            b.vx = random.uniform(-90, 90)
+            b.spin = 0
+            b.ignore_t, b.ignore_p = 0.3, -2
+            b.squeeze_cd = 0.6
+            self.last_touch = -1
+            self.events.append("pop")
         # son sinir kontrolu (oyuncu topu zemine/duvara itmis olabilir)
         if b.y + BALL_R > GROUND:
             b.y = GROUND - BALL_R
