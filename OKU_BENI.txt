@@ -32,6 +32,7 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Şut       : BOŞLUK
   Süper güç : S  veya  Aşağı ok  (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
+  Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)
 
   Tek PC 2 kişi modunda:
   1. oyuncu: A/D, W zıpla, BOŞLUK şut, S süper

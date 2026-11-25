@@ -13,7 +13,7 @@ GOAL_H = 188          # kale agzi yuksekligi
 ROOF_T = 12           # ust direk/cati kalinligi
 GOAL_TOP = GROUND - GOAL_H
 
-BALL_R = 24
+BALL_R = 20
 BALL_G = 1250.0
 PLAYER_G = 1750.0
 BALL_MAX = 1700.0
@@ -83,10 +83,15 @@ class Player:
         return self.x + self.face * 3, self.y - self.h + self.head_r + 4, self.head_r
 
     def body(self):
-        return self.x, self.y - self.body_r - 14 * self.stats["scale"], self.body_r
+        """Govde (bel-gogus): yerdeki top bunun altindan gecebilir."""
+        return self.x, self.y - self.h * 0.47, 22.0 * self.stats["scale"]
+
+    def legs(self):
+        """Bacaklar: sadece yerdeyken topu durdurur (ziplayinca top altindan gecer)."""
+        return self.x, self.y - 20, 17.0 * self.stats["scale"]
 
     def foot(self):
-        return self.x + self.face * 40 * self.stats["scale"], self.y - 34, 42.0
+        return self.x + self.face * 38 * self.stats["scale"], self.y - 32, 44.0
 
     @property
     def disabled(self):
@@ -104,6 +109,8 @@ class Ball:
         self.vy = 0.0
         self.ang = 0.0
         self.spin = 0.0        # + ust falso (yere dusunce ileri kacar), - ters falso
+        self.ignore_t = 0.0
+        self.ignore_p = -1
         self.mode = 0          # 0 normal, 1 ates, 2 buz
         self.mode_t = 0.0
         self.owner = -1        # super sutu atan
@@ -127,6 +134,7 @@ class World:
         self.pu_timer = random.uniform(7, 11)
         self.shield = [0.0, 0.0]   # kendi kalesini koruyan buz duvari
         self.scorer = -1
+        self.last_kind = "shot"
         self.shake = 0.0
         self.events.append("whistle")
 
@@ -177,6 +185,7 @@ class World:
         b.mode_t = SUPER_TIME
         b.owner = p.idx
         self.last_touch = p.idx
+        self.last_kind = "super"
         self.events.append("super_fire" if kind == 1 else "super_ice")
         self.shake = 0.25
 
@@ -237,33 +246,49 @@ class World:
         return True
 
     def _kick(self, p, rel):
-        """Temas noktasina ve harekete gore sut."""
+        """Temas noktasina ve harekete gore sut (varsayilan: yukari-ileri)."""
         b = self.ball
         pw = p.stats["kick"]
-        q = 1.0 - 0.45 * clamp(rel, 0.0, 1.0)      # tam temas = guclu sut
+        q = 1.0 - 0.4 * clamp(rel, 0.0, 1.0)       # tam temas = guclu sut
         h = p.y - b.y                               # topun ayak seviyesinden yuksekligi
-        if h < 34:
-            ang = 40.0      # ayagin alti: asirtma
-        elif h < 72:
-            ang = 24.0      # ayak ustu: sert
+        if h < 40:
+            ang, kind = 50.0, "shot"     # yerdeki top: havalanir
+        elif h < 85:
+            ang, kind = 34.0, "shot"     # diz hizasi
         else:
-            ang = 10.0      # havadaki top: vole
-        if (b.x - p.x) * p.dir > 58:
-            ang -= 6        # uzaktan ayak ucu: daha duz
-        spin = 0.15
+            ang, kind = 16.0, "volley"   # havadaki top: vole
+        spin = 0.1
         mv = p.move * p.dir
         if mv < 0:
-            ang, q, spin = 58.0, q * 0.85, -0.9          # geri giderken: yuksek asirtma, ters falso
+            ang, q, spin, kind = 66.0, q * 0.9, -0.9, "lob"            # geri giderken: yuksek asirtma
         elif mv > 0 and abs(p.vx) > 150:
-            ang, q, spin = max(5.0, ang - 13), q * 1.08, 1.0   # kosarak: sert, ust falso
+            ang, q, spin = ang - 8, q * 1.08, 0.6                       # kosarak: daha sert
+            if kind == "shot":
+                kind = "drive"
         if not p.on_ground:
-            ang -= 5
-        speed = 880 * pw * q
+            ang -= 4
+        speed = 900 * pw * q
         r = math.radians(ang)
         b.vx = p.dir * speed * math.cos(r) + p.vx * 0.25
         b.vy = -speed * math.sin(r) + (p.vy * 0.2 if p.vy < 0 else 0)
         b.spin = spin
         b.mode = 0
+        b.ignore_t, b.ignore_p = 0.12, p.idx
+        self.last_kind = kind
+        self.events.append("kick")
+        self._touch(p)
+
+    def _flick(self, p):
+        """Arkada kalan topu topukla kafanin ustunden one asirt."""
+        b = self.ball
+        b.x = p.x - p.dir * 6
+        b.y = min(b.y, p.y - 45)
+        b.vx = p.dir * (340 + abs(p.vx) * 0.3)
+        b.vy = -990
+        b.spin = -0.3
+        b.mode = 0
+        b.ignore_t, b.ignore_p = 0.45, p.idx
+        self.last_kind = "flick"
         self.events.append("kick")
         self._touch(p)
 
@@ -363,6 +388,8 @@ class World:
         for i in range(2):
             if b.hit_cd[i] > 0:
                 b.hit_cd[i] -= dt
+        if b.ignore_t > 0:
+            b.ignore_t -= dt
         if b.mode:
             b.mode_t -= dt
             if b.mode_t <= 0:
@@ -433,8 +460,10 @@ class World:
             if opp_super and b.hit_cd[p.idx] <= 0:
                 hx, hy, hr = p.head()
                 bx, by, br = p.body()
+                lx, ly, lr = p.legs()
                 if (math.hypot(b.x - hx, b.y - hy) < hr + BALL_R or
-                        math.hypot(b.x - bx, b.y - by) < br + BALL_R):
+                        math.hypot(b.x - bx, b.y - by) < br + BALL_R or
+                        math.hypot(b.x - lx, b.y - ly) < lr + BALL_R):
                     b.hit_cd[p.idx] = 0.5
                     if p.kick_t > 0.05 and not p.disabled:
                         # zamanlamayla super sut karsilanir
@@ -455,6 +484,8 @@ class World:
                     continue
             if b.mode and b.owner != p.idx:
                 continue
+            if b.ignore_t > 0 and b.ignore_p == p.idx:
+                continue  # sut/topuk sonrasi top vuranin govdesinden gecsin
             touched = False
             # sut
             if p.kick_t > 0 and not p.kick_hit and not p.disabled:
@@ -464,9 +495,16 @@ class World:
                     p.kick_hit = True
                     self._kick(p, dist / (fr + BALL_R))
                     continue
+                # top arkada (kendi kale tarafimda) ve alcakta: topukla one asirt
+                back = (b.x - p.x) * p.dir
+                if -78 < back < 6 and p.y - b.y < 95 and abs(b.y - (p.y - 30)) < 75:
+                    p.kick_hit = True
+                    self._flick(p)
+                    continue
             hx, hy, hr = p.head()
             if self._circle_vs_ball(hx, hy, hr, p.vx, p.vy, 0.75):
                 touched = True
+                self.last_kind = "head"
                 b.spin *= 0.3
                 if p.vy < -50:
                     b.vy += p.vy * 0.35
@@ -475,7 +513,13 @@ class World:
             bx, by, br = p.body()
             if self._circle_vs_ball(bx, by, br, p.vx, p.vy, 0.45):
                 touched = True
+            if p.on_ground or p.y > b.y + 4:
+                lx, ly, lr = p.legs()
+                if self._circle_vs_ball(lx, ly, lr, p.vx, p.vy, 0.4):
+                    touched = True
             if touched:
+                if self.last_touch != p.idx:
+                    self.last_kind = "body"
                 if self._touch(p):
                     pass
         # son sinir kontrolu (oyuncu topu zemine/duvara itmis olabilir)
@@ -545,11 +589,16 @@ class World:
 
     def _goal(self, who):
         self.goal_modes = getattr(self, "goal_modes", []) + [self.ball.mode]
+        b = self.ball
+        sp = int(math.hypot(b.vx, b.vy))
+        kind = "super" if b.mode else getattr(self, "last_kind", "shot")
+        own = 1 if (self.last_touch >= 0 and self.last_touch != who) else 0
+        self.goal_info = "%d:%s:%d:%d" % (who, kind, sp, own)
         self.score[who] += 1
         self.scorer = who
         self.phase = "goal"
         self.phase_t = 2.4
-        self.events.append("goal")
+        self.events.append("goal:" + self.goal_info)
         self.ball.mode = 0
         self.shake = 0.5
 

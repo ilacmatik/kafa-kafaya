@@ -61,6 +61,18 @@ KEYS_P2 = {
     "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_DOWN, pygame.K_KP1),
 }
 
+GOAL_LINES = {
+    "super": ["SÜPER GÜÇ! DURDURULAMAZ!", "BU ŞUT DEĞİL, FÜZE!", "KALECİ ERİDİ GİTTİ!", "GÜÇ SENDE, GOL BİZDE!"],
+    "head": ["KAFAYLA ÇAKTI!", "KAFA ÇALIŞIYOR MAŞALLAH!", "KAFA GOLÜ! NE YÜKSELDİ AMA!", "KAFANI KULLAN DEMİŞTİM!"],
+    "lob": ["AŞIRTMA! BAKAKALDI!", "GÖKYÜZÜNDEN DÜŞTÜ!", "TOP KAFANIN ÜSTÜNDEN UÇTU!", "YAĞMUR GİBİ İNDİ!"],
+    "flick": ["TOPUKLA! ŞOV YAPIYOR!", "TOPUK GOLÜ! AYIP OLDU!", "BAKMADAN ATTI!"],
+    "own": ["KENDİ KALESİNE! TEŞEKKÜRLER!", "ÇOK AYIP, KENDİ KALENE!", "HEDİYE GOL! SAĞ OL!", "YANLIŞ KALE KARDEŞİM!"],
+    "hard": ["ÇOK SERT! TUTABİLİRSEN TUT!", "FÜZE GİBİ GİRDİ!", "FİLEYİ YIRTTI!", "BU NE VURUŞ BE!", "ELİNİ YAKARDI!"],
+    "volley": ["VOLE! HAVADA YAKALADI!", "NE VOLE AMA!", "DÜŞMEDEN VURDU!"],
+    "any": ["NASIL ATTIM AMA!", "KALECİ NEREDEYDİ?", "UYUMA, MAÇ VAR!", "TAM DOKSANA!", "BİR DAHA DENE!",
+            "ÇOK KOLAY OLDU!", "BU DA MI GOL?", "DERS GİBİ GOL!"],
+}
+
 PU_TEXT = {"speed": "HIZ!", "jump": "SÜPER ZIPLAMA!", "shield": "BUZ KALKAN!",
            "freeze": "DONDURMA!", "gold": "SÜPER DOLDU!"}
 
@@ -144,6 +156,7 @@ class Sound:
     def __init__(self):
         self.ok = False
         self.muted = False
+        self.hidden = False
         self.snd = {}
         self.last = {}
         try:
@@ -341,7 +354,7 @@ class Sound:
         s["golden"] = self._mk(fan, 0.5)
 
     def play(self, name, gap=0.05, vol=1.0):
-        if not self.ok or self.muted or name not in self.snd:
+        if not self.ok or self.muted or self.hidden or name not in self.snd:
             return
         now = time.time()
         if now - self.last.get(name, 0) < gap:
@@ -378,7 +391,7 @@ class Assets:
         def scaled(raw, f):
             return S(raw, raw.get_width() * f, raw.get_height() * f)
 
-        st = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_clean.jpg")).convert(),
+        st = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_night_clean.jpg")).convert(),
                                           (int(W * gfx.K), int(H * gfx.K)))
         st.blit(fx.make_vignette(st.get_width(), st.get_height(), 80), (0, 0))  # vinyet arka plana gomulu
         self.stadium = gfx.Img(st)
@@ -397,10 +410,10 @@ class Assets:
         for y in range(0, GH, 14):
             pygame.draw.line(nl, (240, 240, 245, 170), (0, y * k), (GD * k, y * k), lw)
         self.net_lines = gfx.Img(nl)
-        mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "menu_bg.jpg")).convert(),
+        mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_night.jpg")).convert(),
                                           (int(W * k), int(H * k)))
         dark = pygame.Surface(mb.get_size(), pygame.SRCALPHA)
-        dark.fill((10, 15, 40, 120))
+        dark.fill((5, 10, 30, 110))
         mb.blit(dark, (0, 0))
         self.menu_bg = gfx.Img(mb)
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
@@ -408,6 +421,12 @@ class Assets:
         self.big_celeb = []
         self.kick_anchor = []
         self.poses = []
+        import json
+        try:
+            with open(res("assets", "anchors.json"), encoding="utf-8") as fh:
+                self.anchors = json.load(fh)
+        except (OSError, ValueError):
+            self.anchors = {}
         for i in range(6):
             idle = L("p%d_idle.png" % i)
             kick = L("p%d_kick.png" % i)
@@ -432,7 +451,7 @@ class Assets:
             cp = res("assets", "p%d_celeb.png" % i)
             cimg = L("p%d_celeb.png" % i) if os.path.exists(cp) else idle
             self.big_celeb.append(scaled(cimg, fb))
-            head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.45))).copy()
+            head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.40))).copy()
             ph = 58
             self.portrait.append(scaled(head, ph / head.get_height()))
         d = sim.BALL_R * 2 + 2
@@ -613,7 +632,7 @@ class MenuScene(Scene):
         s.blit(r, r.get_rect(midbottom=(W - 210, 640 + math.sin(self.t * 3 + 1.5) * 6)))
         draw_title(s, 120, self.t)
         self.list.draw(s, 1 / FPS)
-        draw_text(s, "F11: tam ekran   M: ses aç/kapa", 18, (W // 2, H - 20), (200, 210, 230), outline=2, title=False)
+        draw_text(s, "F11: tam ekran   M: ses aç/kapa   P: gizle", 18, (W // 2, H - 20), (200, 210, 230), outline=2, title=False)
 
 
 class HelpScene(Scene):
@@ -631,11 +650,12 @@ class HelpScene(Scene):
             ("Zıpla", "W  veya  ↑"),
             ("Şut", "BOŞLUK"),
             ("Süper güç", "S  veya  ↓  (bar dolunca)"),
+            ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
             ("1. Oyuncu", "A/D hareket, W zıpla, BOŞLUK şut, S süper"),
             ("2. Oyuncu", "←/→ hareket, ↑ zıpla, ENTER şut, ↓ süper"),
         ]
-        y = 170
+        y = 160
         for a, b in rows:
             if b is None:
                 draw_text(s, a, 26, (W // 2, y), (255, 170, 60), outline=3)
@@ -644,8 +664,8 @@ class HelpScene(Scene):
                 draw_text(s, a, 24, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
                 draw_text(s, b, 24, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
                 y += 38
-        tips = ["Koşarak şut: alçak ve sert   ·   Geri giderken şut: yüksek aşırtma",
-                "Top ayağın altındaysa havalanır, havadaysa vole olur",
+        tips = ["Şut topu yukarı kaldırır  ·  Geri giderken şut: yüksek aşırtma",
+                "Top arkanda kaldıysa ŞUT: topukla kafanın üstünden öne aşırtırsın",
                 "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER",
                 "Süper şut gelirken tam zamanında ŞUT tuşuna basarsan kurtarırsın!"]
         for k, tip in enumerate(tips):
@@ -1126,6 +1146,7 @@ class MatchScene(Scene, OnlineMixin):
         self.flashes = []
         self.ripple = None
         self.goal_flash = 0.0
+        self.goal_line = None
         self.last_count = None
         self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
         app.crowd.excite = app.crowd.target = 0.15
@@ -1404,6 +1425,22 @@ class MatchScene(Scene, OnlineMixin):
             elif name == "goal":
                 snd.play("goal", 0)
                 who = snap.get("scr", 0)
+                parts = ev.split(":")
+                kind, speed, own = "shot", 0, 0
+                if len(parts) >= 5:
+                    kind, speed, own = parts[2], int(parts[3]), int(parts[4])
+                if own:
+                    cat = "own"
+                elif kind in ("super", "head", "lob", "flick", "volley"):
+                    cat = kind
+                elif speed > 760:
+                    cat = "hard"
+                else:
+                    cat = "any"
+                lines = GOAL_LINES[cat]
+                # iki bilgisayarda ayni yazi cikmasi icin skordan secilir
+                pick = lines[(sum(snap["sc"]) * 7 + speed) % len(lines)]
+                self.goal_line = [pick, 2.6, P_COLORS[who]]
                 gx = W - 40 if who == 0 else 40
                 for _ in range(3):
                     self._burst(gx, sim.GOAL_TOP + 40, 40,
@@ -1423,7 +1460,7 @@ class MatchScene(Scene, OnlineMixin):
                 else:
                     msg = "RAKİP ATTI"
                 self._say("GOOOL!", GOLD, 2.4)
-                self.floaters.append([msg, W // 2, 300, 2.2, P_COLORS[who]])
+                self.floaters.append([msg, W // 2, 292, 2.2, P_COLORS[who]])
                 self.shake = 0.5
                 self.ripple = [1 if who == 0 else 0, by, 0.0]
                 self.goal_flash = 0.35
@@ -1521,6 +1558,10 @@ class MatchScene(Scene, OnlineMixin):
             if self.ripple[2] > 1.4:
                 self.ripple = None
         self.goal_flash = max(0.0, self.goal_flash - dt)
+        if self.goal_line:
+            self.goal_line[1] -= dt
+            if self.goal_line[1] <= 0:
+                self.goal_line = None
         for st in self.pstate:
             st["sq"] = max(0.0, st["sq"] - dt)
             st["st"] = max(0.0, st["st"] - dt)
@@ -1582,8 +1623,8 @@ class MatchScene(Scene, OnlineMixin):
         s = self.frame
         s.blit(A.stadium, (0, 0))
         self.app.crowd.draw(s)
-        for i, lx in enumerate((168, 400, 636, 878, 1108)):
-            fx.blit_glow(s, lx, 8, 70 + 6 * math.sin(self.t * 2 + i), (120, 115, 90))
+        for i, (lx, ly) in enumerate(((90, 80), (435, 194), (851, 194), (1180, 80))):
+            fx.blit_glow(s, lx, ly, 95 + 8 * math.sin(self.t * 2 + i), (110, 110, 120))
         snap = self.snap
         if snap is None:
             screen.blit(s, (0, 0))
@@ -1750,19 +1791,20 @@ class MatchScene(Scene, OnlineMixin):
         ice = frozen > 0
         celebrate = (snap["ph"] == "goal" and snap.get("scr") == i) or (snap["ph"] == "over" and snap["win"] == i)
         if kick_t > 0.04:
-            return (A.kick_ice if ice else A.kick)[char], "kick"
+            return (A.kick_ice if ice else A.kick)[char], "kick", "kick"
         if celebrate and "celeb" in poses:
-            return poses["celeb"], "celeb"
+            return poses["celeb"], "celeb", "celeb"
         if not on_ground and "jump" in poses:
-            return (poses["jump_ice"] if ice else poses["jump"]), "jump"
+            return (poses["jump_ice"] if ice else poses["jump"]), "jump", "jump"
         if on_ground and abs(vx) > 40 and not ice and "run1" in poses:
-            return (poses["run1"] if int(run_t * 9) % 2 == 0 else poses["run2"]), "run"
-        return (A.idle_ice if ice else A.idle)[char], "idle"
+            fr = "run1" if int(run_t * 9) % 2 == 0 else "run2"
+            return poses[fr], "run", fr
+        return (A.idle_ice if ice else A.idle)[char], "idle", "idle"
 
     def _draw_player(self, s, i, p, snap):
         A = self.app.assets
         x, y, vx, face, kick_t, frozen, meter, armed, on_ground, char, speed_t, jump_t, stun, run_t = p
-        img, pose = self._player_img(char, p, snap, i)
+        img, pose, akey = self._player_img(char, p, snap, i)
         flip = face < 0
         if flip:
             img = A.flipped(img)
@@ -1799,15 +1841,13 @@ class MatchScene(Scene, OnlineMixin):
         if tilt:
             img = tf.rotate(img, -tilt * (1 if not flip else -1))
         rect = img.get_rect()
-        if pose == "kick":
-            ax = A.kick_anchor[char]
-            rect.bottom = int(y - bob)
-            if flip:
-                rect.left = int(x - rect.w * (1 - ax))
-            else:
-                rect.left = int(x - rect.w * ax)
+        # kafa hizasi: her pozda kafa oyuncunun x konumunda dursun
+        ax = A.anchors.get("p%d_%s" % (char, akey), 0.40 if pose == "kick" else 0.5)
+        rect.bottom = int(y - bob)
+        if flip:
+            rect.left = int(x - rect.w * (1 - ax))
         else:
-            rect.midbottom = (int(x), int(y - bob))
+            rect.left = int(x - rect.w * ax)
         if frozen > 0:
             # buz kalibi
             blk = pygame.Rect(0, 0, 96, int(h + 26))
@@ -1959,6 +1999,13 @@ class MatchScene(Scene, OnlineMixin):
             scale = 1 + 0.35 * max(0, 1 - k * 6)
             size = int(96 * scale) if txt == "GOOOL!" else int(72 * scale)
             draw_text(s, txt, size, (W // 2, 200), col, outline=7, alpha=int(255 * min(1, t * 3)))
+        if self.goal_line:
+            txt, life, col = self.goal_line
+            k = min(1.0, (2.6 - life) * 4)
+            wob = math.sin(self.t * 10) * 2 if life > 0.5 else 0
+            panel(s, (W // 2 - 360, 330 + wob, 720, 62), (10, 12, 28, int(200 * min(1, life * 2))), 20, col, 4)
+            draw_text(s, txt, int(30 + 6 * (1 - k)), (W // 2, 361 + wob), WHITE, outline=4,
+                      alpha=int(255 * min(1, life * 2)))
         if snap["ph"] == "ready" and snap["pt"] > 0 and self.banner is None:
             draw_text(s, str(int(math.ceil(snap["pt"]))), 80, (W // 2, 180), WHITE, outline=6)
         if snap["ph"] == "over":
@@ -2035,6 +2082,9 @@ class App:
         self.clock = pygame.time.Clock()
         self.running = True
         self.bot_level = 1
+        self.hidden = False
+        self._restore_events = tuple(getattr(pygame, n) for n in ("WINDOWRESTORED", "WINDOWFOCUSGAINED")
+                                     if hasattr(pygame, n))
         self.scene = MenuScene(self)
 
     @staticmethod
@@ -2062,6 +2112,29 @@ class App:
     def quit(self):
         self.running = False
 
+    def hide(self):
+        """P: oyunu simge durumuna kucult ve sesi kapat."""
+        self.hidden = True
+        self.sound.hidden = True
+        try:
+            pygame.mixer.pause()
+        except pygame.error:
+            pass
+        if isinstance(self.scene, MatchScene) and self.scene.mode in ("bot", "local2"):
+            self.scene.paused = True
+        try:
+            pygame.display.iconify()
+        except pygame.error:
+            pass
+
+    def unhide(self):
+        self.hidden = False
+        self.sound.hidden = False
+        try:
+            pygame.mixer.unpause()
+        except pygame.error:
+            pass
+
     def run(self):
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
@@ -2077,6 +2150,10 @@ class App:
                         pygame.display.toggle_fullscreen()
                     except pygame.error:
                         pass
+                elif e.type == pygame.KEYDOWN and e.key == pygame.K_p and not isinstance(self.scene, JoinScene):
+                    self.hide()
+                elif self.hidden and e.type in self._restore_events:
+                    self.unhide()
                 elif e.type == pygame.KEYDOWN and e.key == pygame.K_m and not isinstance(self.scene, JoinScene):
                     self.sound.toggle()
                     if not self.sound.muted and isinstance(self.scene, MatchScene):

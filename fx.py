@@ -81,22 +81,27 @@ def make_vignette(w, h, strength=95):
 
 
 class Crowd:
-    def __init__(self, res, width):
+    def __init__(self, res, width, data="crowd_night.json", mask_file="crowd_mask_night.png", light=0.82):
         k = gfx.K
         self.k = k
-        mask = pygame.image.load(res("assets", "crowd_mask.png")).convert_alpha()
+        self.light = light
+        mask = pygame.image.load(res("assets", mask_file)).convert_alpha()
+        self.lh = mask.get_height()
         self.mask = pygame.transform.smoothscale(mask, (int(mask.get_width() * k), int(mask.get_height() * k)))
-        self.oy = 95
         self.layer = pygame.Surface(self.mask.get_size(), pygame.SRCALPHA)
-        with open(res("assets", "crowd.json"), encoding="utf-8") as f:
-            secs = json.load(f)
+        with open(res("assets", data), encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, list):
+            secs, self.oy = d, 95
+        else:
+            secs, self.oy = d["secs"], d["oy"]
         rnd = random.Random(42)
         self.fans = []
         self.flags = []
         self.sprites = {}
         self.width = width
         for s in secs:
-            sc = 0.78 if s["tier"] == 0 else 0.92
+            sc = s.get("sc", 0.78 if s["tier"] == 0 else 0.92)
             step = 10.5 * sc
             rows = []
             y = s["y0"] + 12 * sc
@@ -179,6 +184,9 @@ class Crowd:
                 rect((250, 250, 250), (xx, 3, 2, 5))
         ks = sc * self.k
         base = pygame.transform.smoothscale(base, (max(1, round(22 * ks)), max(1, round(34 * ks))))
+        if self.light < 1:
+            v = int(255 * self.light)
+            base.fill((v, v, min(255, v + 18), 255), special_flags=pygame.BLEND_RGBA_MULT)
         self.sprites[k] = base
         return base
 
@@ -189,7 +197,7 @@ class Crowd:
             self.excite = 1.0
             self.boost_side = side
         for _ in range(int(amount * 25)):
-            self.flash.append([random.uniform(0, self.width), random.uniform(10, 165), random.uniform(0.1, 0.25)])
+            self.flash.append([random.uniform(0, self.width), random.uniform(30, self.lh - 20), random.uniform(0.1, 0.25)])
 
     def update(self, dt):
         self.t += dt
@@ -199,7 +207,7 @@ class Crowd:
         n = rate * dt
         while n > 0:
             if random.random() < n:
-                self.flash.append([random.uniform(0, self.width), random.uniform(10, 165),
+                self.flash.append([random.uniform(0, self.width), random.uniform(30, self.lh - 20),
                                    random.uniform(0.08, 0.2)])
             n -= 1
         for f in self.flash:
