@@ -23,6 +23,9 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Maç listede otomatik görünür. Görünmezse 1. PC'nin ekranındaki
   IP adresini yazıp ENTER'a basın.
 - İkiniz de karakter seçip ENTER'a basınca maç başlar.
+- Karakter seçiminde H tuşu hava durumunu değiştirir (açık, yağmur, kar, rüzgar).
+- Berabere biten maç penaltılarla biter. Şut: yerden, şut+yukarı: üst köşe.
+- TURNUVA: 5 maçlık kupa yolu, sonunda kupa töreni.
 - Karakter seçiminde Y tuşu stadyumu değiştirir (Gece Arenası / Timsah Arena).
 
 
@@ -35,6 +38,8 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Aşırtma   : şut anında (top ayağa değerken) W / Yukarı ok basılı olsun
   Süper güç : S  veya  Aşağı ok  (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
+  Omuz at   : E  veya  Sağ CTRL (ağır karakter hafifi savurur)
+  Rövaşata  : havadayken top kafanın üstündeyse şut
   Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)
 
   Tek PC 2 kişi modunda:

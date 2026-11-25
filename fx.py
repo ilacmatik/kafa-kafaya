@@ -148,6 +148,9 @@ class Crowd:
         self.boost_side = -1
         self.boost_t = 0.0
         self.teams = None
+        self.fill = 1.0
+        for fan in self.fans:
+            fan.append(rnd.random())   # dolma sirasi
 
     # ------------------------------------------------------------ sprite
     def _sprite(self, key, pose):
@@ -278,8 +281,12 @@ class Crowd:
         wx = self.wave_x
         mid = self.width / 2
         sad = self.boost_side if (self.boost_t > 0 and self.teams) else -1
-        for f in self.fans:
-            x, y, key, ph, spd, thr, always, scarf = f
+        nf = len(self.fans)
+        lim = self.fill
+        for fi, f in enumerate(self.fans):
+            if lim < 1.0 and f[8] > lim:
+                continue   # mac basinda tribun yavas yavas dolar
+            x, y, key, ph, spd, thr, always, scarf = f[:8]
             b = abs(math.sin(t * spd + ph))
             up = ex > thr
             if sad >= 0 and (0 if x < mid else 1) != sad:
@@ -290,9 +297,9 @@ class Crowd:
             if up or always:
                 pose = 2 if scarf else 1
             if wx is not None and abs(x - wx) < 55:
-                k = 1 - abs(x - wx) / 55
-                jump = max(jump, 9 * k)
-                pose = 1 if k > 0.3 else pose
+                wk = 1 - abs(x - wx) / 55
+                jump = max(jump, 9 * wk)
+                pose = 1 if wk > 0.3 else pose
             img = self._sprite(key, pose)
             L.blit(img, (int(x * k - img.get_width() / 2), int((y - jump) * k - img.get_height())))
         L.blit(self.mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)

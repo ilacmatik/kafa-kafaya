@@ -34,5 +34,17 @@
 "p5_run2": 0.552,
 "p5_jump": 0.471,
 "p5_kick": 0.457,
-"p5_celeb": 0.488
+"p5_celeb": 0.488,
+"p0_bike": 0.55,
+"p0_shoulder": 0.648,
+"p1_bike": 0.55,
+"p1_shoulder": 0.648,
+"p2_bike": 0.55,
+"p2_shoulder": 0.648,
+"p3_bike": 0.55,
+"p3_shoulder": 0.674,
+"p4_bike": 0.55,
+"p4_shoulder": 0.651,
+"p5_bike": 0.55,
+"p5_shoulder": 0.604
 }

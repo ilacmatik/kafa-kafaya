@@ -55,6 +55,15 @@ assert m.snap["ph"] == "over", m.snap["ph"]
 app.stadium = 1
 run(app, main.MatchScene(app, "local2", [2, 3], 60), 600, keys=True)
 app.stadium = 0
+for wx in ("rain", "snow", "wind"):
+    run(app, main.MatchScene(app, "bot", [4, 1], 60, weather=wx), 200, keys=True)
+mp = main.MatchScene(app, "bot", [5, 2], 60)
+mp.world.phase = "play"; mp.world.time_left = 0.02; mp.world.score = [1, 1]
+run(app, mp, 60 * 20, keys=True)
+cup = main.new_cup(1)
+run(app, main.CupScene(app, cup), 10)
+cup["stage"] = 4
+run(app, main.CupScene(app, cup, result=True), 60)
 hw = main.HostWaitScene(app)
 run(app, hw, 30)
 jw = main.JoinScene(app)

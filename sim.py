@@ -29,12 +29,12 @@ PU_KINDS = ["speed", "jump", "shield", "freeze", "gold"]
 
 # isim, hiz, ziplama, sut gucu, boy carpani, kafa carpani, super tipi
 CHARACTERS = [
-    {"name": "ALEV",   "speed": 335, "jump": 650, "kick": 1.12, "scale": 1.00, "head": 1.00, "power": "fire"},
-    {"name": "KAPTAN", "speed": 320, "jump": 655, "kick": 1.06, "scale": 1.02, "head": 1.05, "power": "magnet"},
-    {"name": "DUVAR",  "speed": 300, "jump": 700, "kick": 0.95, "scale": 1.00, "head": 1.12, "power": "glove"},
-    {"name": "SARI",   "speed": 322, "jump": 715, "kick": 1.00, "scale": 1.03, "head": 1.00, "power": "ice"},
-    {"name": "SIMSEK", "speed": 385, "jump": 645, "kick": 0.95, "scale": 0.95, "head": 0.95, "power": "bolt"},
-    {"name": "TANK",   "speed": 275, "jump": 610, "kick": 1.30, "scale": 1.08, "head": 1.10, "power": "quake"},
+    {"name": "ALEV",   "speed": 335, "jump": 650, "kick": 1.12, "scale": 1.00, "head": 1.00, "power": "fire", "mass": 1.0},
+    {"name": "KAPTAN", "speed": 320, "jump": 655, "kick": 1.06, "scale": 1.02, "head": 1.05, "power": "magnet", "mass": 1.12},
+    {"name": "DUVAR",  "speed": 300, "jump": 700, "kick": 0.95, "scale": 1.00, "head": 1.12, "power": "glove", "mass": 1.05},
+    {"name": "SARI",   "speed": 322, "jump": 715, "kick": 1.00, "scale": 1.03, "head": 1.00, "power": "ice", "mass": 1.0},
+    {"name": "SIMSEK", "speed": 385, "jump": 645, "kick": 0.95, "scale": 0.95, "head": 0.95, "power": "bolt", "mass": 0.8},
+    {"name": "TANK",   "speed": 275, "jump": 610, "kick": 1.30, "scale": 1.08, "head": 1.10, "power": "quake", "mass": 1.55},
 ]
 # ekranda gosterilen isimler (Turkce karakterli)
 DISPLAY_NAMES = ["ALEV", "KAPTAN", "DUVAR", "SARI", "ŞİMŞEK", "TANK"]
@@ -56,6 +56,7 @@ class Player:
         c = CHARACTERS[char]
         self.stats = c
         self.h = BASE_H * c["scale"]
+        self.h0 = self.h
         self.head_r = 27.0 * c["head"] * c["scale"]
         self.body_r = 29.0 * c["scale"]
         self.dir = 1 if idx == 0 else -1     # hucum yonu
@@ -85,6 +86,11 @@ class Player:
         self.charge = 0.0
         self.kick_power = 1.0
         self.magnet_t = 0.0
+        self.shoulder_t = 0.0
+        self.shoulder_cd = 0.0
+        self.sh_dir = 1
+        self.sh_hit = False
+        self.bike_t = 0.0
         self.lob = False
         self.lob_shot = False
         self.move = 0
@@ -130,7 +136,7 @@ class Ball:
 
 
 class World:
-    def __init__(self, char0, char1, duration=90):
+    def __init__(self, char0, char1, duration=90, weather="clear", pens=True):
         self.players = [Player(0, char0), Player(1, char1)]
         self.ball = Ball()
         self.score = [0, 0]
@@ -150,21 +156,32 @@ class World:
         self.clock = 0.0
         self.last_kind = "shot"
         self.shake = 0.0
+        self.weather = weather
+        self.wind = random.choice((-1, 1)) * random.uniform(150, 230) if weather == "wind" else 0.0
+        self.wind_t = random.uniform(10, 16)
+        self.pens_on = pens
+        self.pen = None
+        self.stats = {"shots": [0, 0], "heads": [0, 0], "saves": [0, 0], "fast": [0, 0], "poss": [0.0, 0.0]}
         self.events.append("whistle")
 
     # ------------------------------------------------------------ girdiler
-    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed, kick_held=None):
+    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed, kick_held=None, shoulder=False):
         p = self.players[i]
         jump_edge = jump and not p.jump_prev
         p.jump_prev = jump
-        if self.phase in ("ready", "over"):
+        if self.phase in ("ready", "over", "pen_ready", "pen_res"):
             p.vx = 0
             p.charging = False
             return
         if p.disabled:
             p.vx *= 0.85
             return
+        if self.phase == "pen" and self.pen["turn"] != i and self.last_touch < 0:
+            p.vx = 0   # kaleci sut cikana kadar kipirdayamaz
+            return
         spd = p.stats["speed"] * (1.45 if p.speed_t > 0 else 1.0)
+        if self.weather == "snow":
+            spd *= 0.88
         move = (1 if right else 0) - (1 if left else 0)
         back = move != 0 and move != p.dir
         if back:
@@ -172,7 +189,18 @@ class World:
         target = move * spd
         # hafif ivmelenme (geri donuste daha cevik)
         acc = (0.45 if back else 0.35) if p.on_ground else (0.26 if back else 0.18)
+        if self.weather == "rain" and p.on_ground:
+            acc *= 0.5   # islak zemin: kayar
         p.vx += (target - p.vx) * acc
+        if shoulder and p.shoulder_cd <= 0 and p.on_ground:
+            o = self.players[1 - i]
+            p.sh_dir = move if move else (1 if o.x > p.x else -1)
+            p.shoulder_t = 0.28
+            p.shoulder_cd = 1.8
+            p.sh_hit = False
+            self.events.append("shoulder:%d" % i)
+        if p.shoulder_t > 0:
+            p.vx = p.sh_dir * 640
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         jmul = 1.28 if p.jump_t > 0 else 1.0
@@ -198,7 +226,7 @@ class World:
             if p.charging and not kick_held:
                 p.charging = False
                 self._swing(p, p.charge)
-        if super_pressed and p.meter >= 100 and p.armed <= 0 and p.magnet_t <= 0:
+        if super_pressed and p.meter >= 100 and p.armed <= 0 and p.magnet_t <= 0 and self.phase == "play":
             self._use_power(p)
 
     # ------------------------------------------------------------ yardimcilar
@@ -269,6 +297,11 @@ class World:
         self.shake = 0.25
 
     def _touch(self, p):
+        b = self.ball
+        own_x = 0 if p.idx == 0 else W
+        toward = (b.vx < -350) if p.idx == 0 else (b.vx > 350)
+        if p.touch_cd <= 0 and toward and abs(b.x - own_x) < 300 and self.last_touch != p.idx:
+            self.stats["saves"][p.idx] += 1
         p.contact = self.clock
         if p.touch_cd <= 0:
             p.meter = min(100.0, p.meter + METER_PER_TOUCH)
@@ -350,6 +383,23 @@ class World:
                 kind = "drive"
         if not p.on_ground:
             ang -= 4
+        if self.phase == "pen" and self.pen["turn"] == p.idx:
+            # penalti: yukari basiliysa ust kose, degilse yerden
+            gx = W - GOAL_D + 10 if p.dir == 1 else GOAL_D - 10
+            hy = random.uniform(128, 150) if p.lob else random.uniform(26, 46)
+            vx = 820 * pw * p.kick_power
+            T = abs(gx - b.x) / vx
+            ty = GROUND - hy
+            b.vx = p.dir * vx
+            b.vy = (ty - b.y - 0.5 * BALL_G * T * T) / T
+            b.spin = 0
+            b.mode = 0
+            b.ignore_t, b.ignore_p = 0.12, p.idx
+            self.last_kind = "lob" if p.lob else "drive"
+            self.stats["shots"][p.idx] += 1
+            self.events.append("kick")
+            self._touch(p)
+            return
         speed = 900 * pw * q * p.kick_power
         if p.kick_power > 1.3:
             kind = "power"
@@ -361,7 +411,26 @@ class World:
         b.mode = 0
         b.ignore_t, b.ignore_p = 0.12, p.idx
         self.last_kind = kind
+        self.stats["shots"][p.idx] += 1
+        self.stats["fast"][p.idx] = max(self.stats["fast"][p.idx], int(speed))
         self.events.append("kick")
+        self._touch(p)
+
+    def _bicycle(self, p):
+        """Rovasata: havada, top kafanin ustunde/arkasindayken sut."""
+        b = self.ball
+        pw = p.stats["kick"] * p.kick_power
+        b.vx = p.dir * 1020 * pw
+        b.vy = 160 if b.y < GROUND - 280 else -40
+        b.spin = 0.3
+        b.mode = 0
+        b.ignore_t, b.ignore_p = 0.2, p.idx
+        p.bike_t = 0.5
+        p.vy = min(p.vy, -120)
+        self.last_kind = "bicycle"
+        self.stats["shots"][p.idx] += 1
+        self.stats["fast"][p.idx] = max(self.stats["fast"][p.idx], int(math.hypot(b.vx, b.vy)))
+        self.events.append("bicycle:%d" % p.idx)
         self._touch(p)
 
     def _smash(self, p):
@@ -400,6 +469,31 @@ class World:
     # ------------------------------------------------------------ adim
     def step(self, dt):
         self.clock += dt
+        if self.phase == "pen_ready":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self.phase = "pen"
+                self.pen["t"] = 0.0
+                self.events.append("whistle")
+            return
+        if self.phase == "pen":
+            self.pen["t"] += dt
+            if self.pen["t"] > 5.0:
+                self._pen_result(False)
+        if self.phase == "pen_res":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self._pen_next()
+                return
+        if self.phase == "play":
+            if self.last_touch >= 0:
+                self.stats["poss"][self.last_touch] += dt
+            if self.wind:
+                self.wind_t -= dt
+                if self.wind_t <= 0:
+                    self.wind = -self.wind * random.uniform(0.8, 1.2)
+                    self.wind_t = random.uniform(10, 16)
+                    self.events.append("wind")
         if self.phase == "over":
             self._step_players(dt)
             return
@@ -415,6 +509,9 @@ class World:
                 self.time_left = 0
                 if self.score[0] != self.score[1]:
                     self._end()
+                    return
+                if self.pens_on:
+                    self._start_pens()
                     return
                 self.golden = True
                 self.events.append("golden")
@@ -433,7 +530,8 @@ class World:
             p.meter = min(100.0, p.meter + METER_PER_SEC * dt) if self.phase == "play" else p.meter
             if p.charging:
                 p.charge = min(1.0, p.charge + dt / 0.4)
-            for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd", "magnet_t"):
+            for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd", "magnet_t",
+                         "shoulder_t", "shoulder_cd", "bike_t"):
                 v = getattr(p, attr)
                 if v > 0:
                     setattr(p, attr, max(0.0, v - dt))
@@ -483,10 +581,30 @@ class World:
         if abs(dx) < 72 and (a.y - a.h < b.y and b.y - b.h < a.y):
             over = 72 - abs(dx)
             s = 1 if dx >= 0 else -1
-            a.x -= s * over / 2
-            b.x += s * over / 2
+            ma, mb = a.stats["mass"], b.stats["mass"]
+            a.x -= s * over * mb / (ma + mb)
+            b.x += s * over * ma / (ma + mb)
             a.x = clamp(a.x, 28, W - 28)
             b.x = clamp(b.x, 28, W - 28)
+            # carpisma: agir olan hafifi iter
+            if (a.vx - b.vx) * s > 180 and a.shoulder_t <= 0 and b.shoulder_t <= 0:
+                e = 0.5
+                va = (ma * a.vx + mb * b.vx + mb * e * (b.vx - a.vx)) / (ma + mb)
+                vb = (ma * a.vx + mb * b.vx + ma * e * (a.vx - b.vx)) / (ma + mb)
+                a.vx, b.vx = va, vb
+            for p, o, d in ((a, b, s), (b, a, -s)):
+                if p.shoulder_t > 0 and not p.sh_hit and p.sh_dir == d:
+                    p.sh_hit = True
+                    r = p.stats["mass"] / o.stats["mass"]
+                    o.vx = d * min(760, 430 * r)
+                    if o.frozen <= 0:
+                        o.vy = -min(380, 200 * r)
+                        o.on_ground = False
+                        o.stun = max(o.stun, min(0.7, 0.32 * r))
+                    o.charging = False
+                    p.vx *= 0.25
+                    p.shoulder_t = 0
+                    self.events.append("bump:%d" % o.idx)
 
     def _step_ball(self, dt):
         b = self.ball
@@ -514,6 +632,8 @@ class World:
         else:
             b.vy += BALL_G * dt + b.spin * 430 * dt
             b.vx *= (1 - 0.12 * dt)
+            if self.wind and b.y < GROUND - BALL_R - 4:
+                b.vx += self.wind * dt
             b.spin *= (1 - 0.6 * dt)
         b.x += b.vx * dt
         b.y += b.vy * dt
@@ -528,10 +648,10 @@ class World:
                     if b.spin:
                         b.vx += (1 if b.vx >= 0 else -1) * b.spin * 160
                         b.spin *= 0.4
-                b.vy = -b.vy * 0.68
+                b.vy = -b.vy * {"rain": 0.55, "snow": 0.42}.get(self.weather, 0.68)
                 if abs(b.vy) < 60:
                     b.vy = 0
-            b.vx *= (1 - 1.1 * dt)
+            b.vx *= (1 - {"rain": 0.45, "snow": 2.6}.get(self.weather, 1.1) * dt)
             if b.mode:
                 b.mode = 0
         # tavan
@@ -588,6 +708,7 @@ class World:
                         b.vx = -b.vx * 0.6
                         b.vy = -400
                         self.events.append("block")
+                        self.stats["saves"][p.idx] += 1
                         self._touch(p)
                     elif b.mode == 1:
                         p.stun = 0.9
@@ -611,6 +732,12 @@ class World:
             # sut
             if p.kick_t > 0 and not p.kick_hit and not p.disabled and not p.on_ground:
                 hx, hy, hr = p.head()
+                back = (b.x - p.x) * p.dir
+                if (b.y < p.y - p.h * 0.62 and -85 < back < 14
+                        and math.hypot(b.x - hx, b.y - hy) < hr + BALL_R + 44):
+                    p.kick_hit = True
+                    self._bicycle(p)
+                    continue
                 if b.y < p.y - p.h * 0.55 and math.hypot(b.x - hx, b.y - hy) < hr + BALL_R + 14:
                     p.kick_hit = True
                     self._smash(p)
@@ -641,6 +768,8 @@ class World:
                     b.vy += p.vy * 0.35
                 if abs(b.vx) + abs(b.vy) > 450:
                     self.events.append("head")
+                    if p.touch_cd <= 0:
+                        self.stats["heads"][p.idx] += 1
             bx, by, br = p.body()
             if self._circle_vs_ball(bx, by, br, p.vx, p.vy, 0.45):
                 touched = True
@@ -684,6 +813,19 @@ class World:
             b.vx *= lim / sp
             b.vy *= lim / sp
 
+        # penalti
+        if self.phase == "pen":
+            sh = self.pen["turn"]
+            tx = W if sh == 0 else 0
+            if (sh == 0 and b.x > W - GOAL_D + BALL_R * 0.6 or sh == 1 and b.x < GOAL_D - BALL_R * 0.6) \
+                    and b.y > GOAL_TOP + 2:
+                self._pen_result(True)
+            elif (sh == 0 and b.x < GOAL_D or sh == 1 and b.x > W - GOAL_D) and b.y > GOAL_TOP:
+                self._pen_result(False)
+            elif self.last_touch >= 0 and (abs(b.x - tx) > 560 or
+                                           (b.y >= GROUND - BALL_R - 1 and abs(b.vx) < 40
+                                            and self.clock - self.players[sh].contact > 0.8)):
+                self._pen_result(False)
         # gol kontrolu
         if self.phase == "play":
             if b.x < GOAL_D - BALL_R * 0.6 and b.y > GOAL_TOP + 2:
@@ -746,6 +888,64 @@ class World:
         self.ball.mode = 0
         self.shake = 0.5
 
+    # ------------------------------------------------------------ penaltilar
+    def _start_pens(self):
+        self.pen = {"turn": 0, "res": [[], []], "t": 0.0}
+        self.pu = None
+        self.events.append("pens")
+        self._pen_setup()
+
+    def _pen_setup(self):
+        sh = self.pen["turn"]
+        for p in self.players:
+            p.reset()
+            p.armed = 0
+            p.magnet_t = 0
+            p.h = p.h0
+        self.shield = [0.0, 0.0]
+        self.glove = [0.0, 0.0]
+        shooter, keeper = self.players[sh], self.players[1 - sh]
+        bx = W - 500 if sh == 0 else 500
+        self.ball.reset(bx, GROUND - BALL_R)
+        self.ball.vx = 0
+        shooter.x = bx - shooter.dir * 90
+        keeper.x = W - GOAL_D - 40 if sh == 0 else GOAL_D + 40
+        keeper.h = keeper.h0 * 0.7   # kaleci comelmis bekler
+        self.last_touch = -1
+        self.phase = "pen_ready"
+        self.phase_t = 1.5
+
+    def _pen_result(self, goal):
+        sh = self.pen["turn"]
+        self.pen["res"][sh].append(1 if goal else 0)
+        self.phase = "pen_res"
+        self.phase_t = 1.6
+        if goal:
+            self.scorer = sh
+            self.events.append("pen_goal:%d" % sh)
+        else:
+            self.events.append("pen_miss:%d" % sh)
+
+    def _pen_next(self):
+        r0, r1 = self.pen["res"]
+        g0, g1, n0, n1 = sum(r0), sum(r1), len(r0), len(r1)
+        done = False
+        if n0 <= 5 and n1 <= 5:
+            if g0 > g1 + (5 - n1) or g1 > g0 + (5 - n0):
+                done = True
+        if n0 == n1 and n0 >= 5 and g0 != g1:
+            done = True
+        if done:
+            for p in self.players:
+                p.h = p.h0
+            self.winner = 0 if g0 > g1 else 1
+            self.phase = "over"
+            self.events.append("end")
+            return
+        self.pen["turn"] = 1 - self.pen["turn"]
+        self.scorer = -1
+        self._pen_setup()
+
     def _kickoff(self):
         for p in self.players:
             p.reset()
@@ -759,6 +959,8 @@ class World:
 
     def _end(self):
         self.phase = "over"
+        if self.pen is not None:
+            return
         if self.score[0] > self.score[1]:
             self.winner = 0
         elif self.score[1] > self.score[0]:
@@ -777,7 +979,8 @@ class World:
             ps.append([round(p.x, 1), round(p.y, 1), round(p.vx), p.face, round(p.kick_t, 2),
                        round(p.frozen, 2), round(p.meter, 1), round(p.armed, 2), 1 if p.on_ground else 0,
                        p.char, round(p.speed_t, 1), round(p.jump_t, 1), round(p.stun, 2), round(p.run_t, 2),
-                       round(p.charge, 2) if p.charging else -1, 1 if p.lob else 0])
+                       round(p.charge, 2) if p.charging else -1, 1 if p.lob else 0,
+                       round(p.bike_t, 2), round(p.shoulder_t, 2), 1 if p.h < p.h0 - 1 else 0])
         ev = self.events
         self.events = []
         shk, self.shake = self.shake, 0.0
@@ -791,6 +994,9 @@ class World:
             "gl": [round(self.glove[0], 1), round(self.glove[1], 1)],
             "mg": [round(q.magnet_t, 2) for q in self.players],
             "scr": self.scorer, "ev": ev, "shk": round(shk, 2),
+            "wx": self.weather, "wd": round(self.wind),
+            "pen": None if self.pen is None else [self.pen["turn"], self.pen["res"]],
+            "st": self.stats if self.phase == "over" else None,
         }
 
 
@@ -810,6 +1016,29 @@ class Bot:
     def think(self, w, dt):
         p = w.players[self.idx]
         b = w.ball
+        if w.phase in ("pen", "pen_ready", "pen_res") and w.pen and w.pen["turn"] != self.idx:
+            # penaltida kaleci
+            gx = GOAL_D + 45 if self.idx == 0 else W - GOAL_D - 45
+            left = right = False
+            if w.last_touch < 0:
+                self.guess = random.random() < 0.5
+                self.react_d = random.uniform(80, 200) + 60 * (2 - self.level)
+            dist_b = abs(b.x - p.x)
+            jump = w.last_touch >= 0 and getattr(self, "guess", False) and dist_b < self.react_d
+            kick = False
+            return left, right, jump, kick, False
+        if w.phase == "pen" and w.pen and w.pen["turn"] == self.idx:
+            if not hasattr(self, "pen_plan") or self.pen_plan[0] != len(w.pen["res"][self.idx]):
+                self.pen_plan = (len(w.pen["res"][self.idx]), random.random() < 0.5, random.uniform(0.2, 1.0))
+            _, lob, wait = self.pen_plan
+            if w.pen["t"] < wait or w.last_touch >= 0:
+                return False, False, False, False, False
+            d = p.dir
+            tx = b.x - d * 30
+            right = tx > p.x + 6 if d == 1 else False
+            left = tx < p.x - 6 if d == -1 else False
+            near = abs(b.x - p.x) < 70
+            return left or (d == -1 and not near), right or (d == 1 and not near), near and lob, near, False
         self.t -= dt
         if self.t <= 0:
             self.t = self.react
@@ -859,4 +1088,9 @@ class Bot:
             elif pw == "quake":
                 o = w.players[1 - self.idx]
                 sup = abs(o.x - b.x) < 120 and abs(p.x - b.x) < 260
+        o = w.players[1 - self.idx]
+        if p.shoulder_cd <= 0 and abs(o.x - p.x) < 140 and abs(b.x - o.x) < 90 and p.on_ground:
+            self.shoulder = random.random() < 0.02 * (self.level + 1)
+        else:
+            self.shoulder = False
         return left, right, jump, kick, sup

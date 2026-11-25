@@ -60,16 +60,45 @@ ICE_C = (110, 220, 255)
 KEYS_SOLO = {
     "l": (pygame.K_a, pygame.K_LEFT), "r": (pygame.K_d, pygame.K_RIGHT),
     "j": (pygame.K_w, pygame.K_UP), "k": (pygame.K_SPACE, pygame.K_k),
-    "s": (pygame.K_s, pygame.K_DOWN),
+    "s": (pygame.K_s, pygame.K_DOWN), "o": (pygame.K_e, pygame.K_RCTRL),
 }
 KEYS_P1 = {
     "l": (pygame.K_a,), "r": (pygame.K_d,), "j": (pygame.K_w,),
-    "k": (pygame.K_SPACE,), "s": (pygame.K_s,),
+    "k": (pygame.K_SPACE,), "s": (pygame.K_s,), "o": (pygame.K_e,),
 }
 KEYS_P2 = {
     "l": (pygame.K_LEFT,), "r": (pygame.K_RIGHT,), "j": (pygame.K_UP,),
     "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_DOWN, pygame.K_KP1),
+    "o": (pygame.K_RCTRL, pygame.K_KP2),
 }
+WEATHERS = [("clear", "AÇIK HAVA"), ("rain", "YAĞMUR"), ("snow", "KAR"), ("wind", "RÜZGAR"), ("random", "RASTGELE")]
+
+
+def pick_weather(i):
+    w = WEATHERS[i % len(WEATHERS)][0]
+    return random.choice(["clear", "rain", "snow", "wind"]) if w == "random" else w
+
+
+def record_path():
+    return os.path.join(os.path.expanduser("~"), "kafakafaya_kayit.json")
+
+
+def load_record():
+    import json
+    try:
+        with open(record_path(), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_record(rec):
+    import json
+    try:
+        with open(record_path(), "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+    except OSError:
+        pass
 
 POWERS = {   # isim, renk, super bar rengi
     "fire": ("ATEŞ ŞUTU", (255, 140, 40), "fire"),
@@ -88,6 +117,7 @@ GOAL_LINES = {
     "own": ["KENDİ KALESİNE! TEŞEKKÜRLER!", "ÇOK AYIP, KENDİ KALENE!", "HEDİYE GOL! SAĞ OL!", "YANLIŞ KALE KARDEŞİM!"],
     "hard": ["ÇOK SERT! TUTABİLİRSEN TUT!", "FÜZE GİBİ GİRDİ!", "FİLEYİ YIRTTI!", "BU NE VURUŞ BE!", "ELİNİ YAKARDI!"],
     "volley": ["VOLE! HAVADA YAKALADI!", "NE VOLE AMA!", "DÜŞMEDEN VURDU!"],
+    "bicycle": ["RÖVAŞATA! İNANILMAZ!", "TERS MAKAS! FİLELER!", "BU GOL YILIN GOLÜ!", "HAVADA TAKLA ATTI!"],
     "smash": ["SMAÇ KAFA! YERE GÖMDÜ!", "YUKARIDAN ÇAKTI!", "KAFAYI GÖMDÜ GİTTİ!", "VOLEYBOL MU OYNUYORUZ?"],
     "power": ["ŞARJLI FÜZE!", "BEKLEDİ, BEKLEDİ... BAM!", "TAM GÜÇ! FİLE DAYANMADI!", "BU ŞUTA KALE DAYANMAZ!"],
     "any": ["NASIL ATTIM AMA!", "KALECİ NEREDEYDİ?", "UYUMA, MAÇ VAR!", "TAM DOKSANA!", "BİR DAHA DENE!",
@@ -633,6 +663,9 @@ class Assets:
                 for name in ("run1", "run2", "jump", "celeb"):
                     poses[name] = scaled(L("p%d_%s.png" % (i, name)), f)
                 poses["jump_ice"] = self._ice(poses["jump"])
+            for name in ("bike", "shoulder"):
+                if os.path.exists(res("assets", "p%d_%s.png" % (i, name))):
+                    poses[name] = scaled(L("p%d_%s.png" % (i, name)), f)
             self.poses.append(poses)
             bh = 215
             fb = bh / idle.get_height()
@@ -668,13 +701,34 @@ class Assets:
         self.fx_art = {}
         for n in ("fx_glove", "fx_bolt", "fx_quake", "fx_magnet", "fx_flash", "fx_dust", "fx_spark", "fx_stars",
                   "fx_confetti", "fx_fw_gold", "fx_fw_red", "fx_fw_blue", "fx_str_red", "fx_str_gold",
-                  "fx_str_blue", "fx_str_white", "fx_starburst", "fx_star", "fx_ring"):
+                  "fx_str_blue", "fx_str_white", "fx_starburst", "fx_star", "fx_ring",
+                  "wx_drop", "wx_flake", "wx_gust", "wx_leaf", "wx_splash", "wx_snowpile", "wx_puddle"):
             if os.path.exists(res("assets", n + ".png")):
                 self.fx_art[n] = L(n + ".png")
+        self.stat_badges = []
+        if os.path.exists(res("assets", "sb_0.png")):
+            self.stat_badges = [self._fit(L("sb_%d.png" % k), 28) for k in range(8)]
         self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
         # arayuz parcalari
         self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
         self.icons = {n: self._fit(L("ic_%s.png" % n), 46) for n in ("host", "join", "bot", "2p", "keys", "exit")}
+        self.icons["cup"] = self.icons["bot"]
+        self.ref = {}
+        for n in ("idle", "whistle", "point", "card"):
+            if os.path.exists(res("assets", "ref_%s.png" % n)):
+                raw = L("ref_%s.png" % n)
+                self.ref[n] = scaled(raw, 132 / raw.get_height())
+        self.cup_art = {}
+        for n, sz in (("cup_gold", 120), ("cup_silver", 90), ("cup_bronze", 90), ("medal", 80), ("podium", 260),
+                      ("laurel", 120), ("ribbon", 200), ("crown", 80), ("st_lock", 30), ("st_check", 30),
+                      ("st_swords", 30), ("st_skull", 30), ("st_star", 30)):
+            if os.path.exists(res("assets", n + ".png")):
+                self.cup_art[n] = self._fit(L(n + ".png"), sz)
+        if os.path.exists(res("assets", "cup_gold.png")):
+            self.cup_art["cup_gold_big"] = self._fit(L("cup_gold.png"), 200)
+        if os.path.exists(res("assets", "podium.png")):
+            self.cup_art["podium_big"] = self._fit(L("podium.png"), 470)
+            self.icons["cup"] = self._fit(L("cup_gold.png"), 44)
         logo = L("logo.png")
         self.logo = self._fit(logo, 540)
         self.logo_small = self._fit(logo, 300)
@@ -948,14 +1002,15 @@ class MenuScene(Scene):
         super().__init__(app)
         a = app
         x, bw, bh = W // 2 - 210, 420, 60
-        mk = lambda i, txt, cb, ic: Button((x, 262 + i * 70, bw, bh), txt, cb, ic)
+        mk = lambda i, txt, cb, ic: Button((x, 238 + i * 63, bw, 54), txt, cb, ic)
         self.list = ButtonList([
             mk(0, "MAÇ KUR", lambda: a.go(HostWaitScene(a)), "host"),
             mk(1, "MAÇA KATIL", lambda: a.go(JoinScene(a)), "join"),
             mk(2, "BİLGİSAYARA KARŞI", lambda: a.go(SelectScene(a, "bot")), "bot"),
-            mk(3, "TEK PC 2 KİŞİ", lambda: a.go(SelectScene(a, "local2")), "2p"),
-            mk(4, "KONTROLLER", lambda: a.go(HelpScene(a)), "keys"),
-            mk(5, "ÇIKIŞ", a.quit, "exit"),
+            mk(3, "TURNUVA", lambda: a.go(SelectScene(a, "cup")), "cup"),
+            mk(4, "TEK PC 2 KİŞİ", lambda: a.go(SelectScene(a, "local2")), "2p"),
+            mk(5, "KONTROLLER", lambda: a.go(HelpScene(a)), "keys"),
+            mk(6, "ÇIKIŞ", a.quit, "exit"),
         ])
         self.t = 0
         self.spark = Sparkles(50)
@@ -1024,10 +1079,11 @@ class HelpScene(Scene):
             ("Aşırtma", "Top ayağa değerken W / ↑ basılı olsun"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
             ("Süper güç", "S  veya  ↓  (bar dolunca)"),
+            ("Omuz at", "E  veya  Sağ CTRL"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
-            ("1. Oyuncu", "A/D hareket, W zıpla, BOŞLUK şut, S süper"),
-            ("2. Oyuncu", "←/→ hareket, ↑ zıpla, ENTER şut, ↓ süper"),
+            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S süper, E omuz"),
+            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ süper, Sağ CTRL omuz"),
         ]
         y = 168
         for a, b in rows:
@@ -1038,7 +1094,7 @@ class HelpScene(Scene):
                 draw_text(s, a, 22, (W // 2 - 170, y), WHITE, anchor="midright", outline=2, title=False)
                 draw_text(s, b, 22, (W // 2 - 140, y), (180, 230, 255), anchor="midleft", outline=2, title=False)
                 y += 33
-        tips = ["Havada kafa vururken ŞUT: smaç kafa  ·  Geri giderken şut: yüksek aşırtma",
+        tips = ["Havada top kafanın üstündeyken ŞUT: RÖVAŞATA  ·  önündeyken: SMAÇ KAFA",
                 "Top arkanda kaldıysa ŞUT: topukla kafanın üstünden öne aşırtırsın",
                 "Topu güç simgelerine çarptır: HIZ, ZIPLAMA, BUZ KALKAN, DONDURMA, SÜPER",
                 "Süper şut gelirken tam zamanında ŞUT tuşuna basarsan kurtarırsın!"]
@@ -1293,16 +1349,19 @@ class SelectScene(Scene, OnlineMixin):
         self.t = 0
         self.pending = pending or []
         self.me = 1 if mode == "client" else 0
-        if mode == "bot":
+        if mode in ("bot", "cup"):
             self.pick[1] = random.randrange(6)
         if self.conn:
             self._send_pick()
             if mode == "host":
                 self.conn.send({"t": "stad", "s": app.stadium})
+                self.conn.send({"t": "wx", "w": app.weather})
         self.cards = [pygame.Rect(cx - 85, 300, 170, 270) for cx in PODIUMS]
         self.anim = [[-1, 0.0], [-1, 0.0]]
-        self.stad_rect = pygame.Rect(0, 0, 250, 30)
-        self.stad_rect.center = (W // 2, 258)
+        self.stad_rect = pygame.Rect(0, 0, 250, 28)
+        self.stad_rect.center = (W // 2, 247)
+        self.wx_rect = pygame.Rect(0, 0, 210, 26)
+        self.wx_rect.center = (W // 2, 278)
 
     def _send_pick(self):
         if self.conn:
@@ -1367,6 +1426,11 @@ class SelectScene(Scene, OnlineMixin):
                 self.app.sound.play("click")
                 if self.conn:
                     self.conn.send({"t": "dur", "d": self.dur})
+            if k == pygame.K_h and self.mode != "client":
+                self.app.weather = (self.app.weather + 1) % len(WEATHERS)
+                self.app.sound.play("click")
+                if self.conn:
+                    self.conn.send({"t": "wx", "w": self.app.weather})
             if k == pygame.K_y and self.mode != "client":
                 self.app.stadium = (self.app.stadium + 1) % len(STADIUMS)
                 self.app.sound.play("click")
@@ -1376,6 +1440,12 @@ class SelectScene(Scene, OnlineMixin):
                 self.level = (self.level + 1) % 3
                 self.app.bot_level = self.level
                 self.app.sound.play("click")
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.wx_rect.collidepoint(e.pos):
+            if self.mode != "client":
+                self.app.weather = (self.app.weather + 1) % len(WEATHERS)
+                self.app.sound.play("click")
+                if self.conn:
+                    self.conn.send({"t": "wx", "w": self.app.weather})
         elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.stad_rect.collidepoint(e.pos):
             if self.mode != "client":
                 self.app.stadium = (self.app.stadium + 1) % len(STADIUMS)
@@ -1418,12 +1488,16 @@ class SelectScene(Scene, OnlineMixin):
                     return
                 elif t == "stad":
                     self.app.stadium = m.get("s", 0) % len(STADIUMS)
+                elif t == "wx":
+                    self.app.weather = m.get("w", 0) % len(WEATHERS)
                 elif t == "start" and self.mode == "client":
                     self.app.stadium = m.get("st", 0) % len(STADIUMS)
                     self.app.go(MatchScene(self.app, "client", m["c"], m["dur"], conn=self.conn,
                                            pending=msgs[i + 1:]))
                     return
-        if self.mode == "bot" and self.ready[0]:
+        if self.mode == "cup" and self.ready[0]:
+            self.app.go(CupScene(self.app, new_cup(self.pick[0])))
+        elif self.mode == "bot" and self.ready[0]:
             self.app.go(MatchScene(self.app, "bot", self.pick, self.dur, level=self.level))
         elif self.mode in ("local2",) and all(self.ready):
             self.app.go(MatchScene(self.app, "local2", self.pick, self.dur))
@@ -1435,7 +1509,7 @@ class SelectScene(Scene, OnlineMixin):
         A = self.app.assets
         s.blit(A.select_bg, (0, 0))
         labels = {"bot": ("SEN", "BİLGİSAYAR"), "local2": ("1. OYUNCU", "2. OYUNCU"),
-                  "host": ("SEN", "RAKİP"), "client": ("RAKİP", "SEN")}[self.mode]
+                  "host": ("SEN", "RAKİP"), "client": ("RAKİP", "SEN"), "cup": ("SEN", "RAKİPLER")}[self.mode]
         draw_text(s, "KARAKTERİNİ SEÇ", 44, (W // 2, 42), GOLD, outline=5)
         # oyuncu bilgi panelleri
         for who in (0, 1):
@@ -1470,7 +1544,9 @@ class SelectScene(Scene, OnlineMixin):
             s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
             draw_text(s, POWERS[pw][0], 19, (tx + 30, r.y + 161), POWERS[pw][1], anchor="midleft", outline=3)
             # durum etiketi
-            if self.mode == "bot" and who == 1:
+            if self.mode == "cup" and who == 1:
+                st, tcol = "5 MAÇLIK KUPA YOLU", (150, 110, 20)
+            elif self.mode == "bot" and who == 1:
                 st, tcol = "ZORLUK: %s  (Z)" % LEVELS[self.level], (120, 70, 200)
             elif self.ready[who]:
                 st, tcol = "HAZIR", (40, 170, 70)
@@ -1486,12 +1562,18 @@ class SelectScene(Scene, OnlineMixin):
         vs_bob = math.sin(self.t * 3) * 4
         fx.blit_glow(s, W // 2, 160, 90, (70, 50, 10))
         draw_text(s, "VS", 78, (W // 2, 160 + vs_bob), GOLD, outline=6)
-        draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 18,
-                  (W // 2, 226), (215, 225, 245), outline=2, title=False)
+        draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 17,
+                  (W // 2, 220), (215, 225, 245), outline=2, title=False)
         stp = self.stad_rect
         pill(s, stp, (30, 120, 60) if self.app.stadium == 1 else (40, 60, 130), radius=12)
         draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 15,
                   (stp.centerx, stp.centery - 1), WHITE, outline=2)
+        wxr = self.wx_rect
+        wcol = {"clear": (200, 140, 30), "rain": (50, 90, 160), "snow": (120, 150, 190), "wind": (60, 140, 150),
+                "random": (110, 70, 160)}[WEATHERS[self.app.weather][0]]
+        pill(s, wxr, wcol, radius=11)
+        draw_text(s, WEATHERS[self.app.weather][1] + ("  (H)" if self.mode != "client" else ""), 14,
+                  (wxr.centerx, wxr.centery - 1), WHITE, outline=2)
         # podyumlar ve karakterler
         for i, cx in enumerate(PODIUMS):
             sel0, sel1 = self.pick[0] == i, self.pick[1] == i
@@ -1522,11 +1604,11 @@ class SelectScene(Scene, OnlineMixin):
                 pill(s, tag, P_COLORS[who], radius=11)
                 draw_text(s, lab, 15, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         if self.mode == "local2":
-            hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum"
+            hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum  ·  H hava"
         elif self.mode == "bot":
-            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum"
+            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum · H hava"
         else:
-            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum" if self.mode == "host" else "")
+            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else "")
         panel(s, (W // 2 - 420, 640, 840, 64), (8, 12, 28, 190), 18)
         draw_text(s, hint, 19, (W // 2, 660), (225, 232, 250), outline=2, title=False)
         draw_text(s, "Fare ile karaktere tıklayarak da seçebilirsin   ·   ESC: geri", 15, (W // 2, 688),
@@ -1552,20 +1634,26 @@ def lerp(a, b, t):
 class MatchScene(Scene, OnlineMixin):
     """mode: bot | local2 | host | client"""
 
-    def __init__(self, app, mode, chars, dur, conn=None, level=1, pending=None):
+    def __init__(self, app, mode, chars, dur, conn=None, level=1, pending=None, weather=None, cup=None):
         super().__init__(app)
         self.mode = mode
+        self.cup = cup
+        self.weather = weather or pick_weather(app.weather)
+        self.recorded = False
+        self.record_line = ""
+        self.last_stats = None
+        self.rain = [[random.uniform(0, W), random.uniform(0, H), random.uniform(0.8, 1.2)] for _ in range(160)]
         self.chars = list(chars)
         self.dur = dur
         self.conn = conn
         self.level = level
         self.world = None
         if mode != "client":
-            self.world = sim.World(chars[0], chars[1], dur)
+            self.world = sim.World(chars[0], chars[1], dur, weather=self.weather)
         self.bot = sim.Bot(1, level) if mode == "bot" else None
         self.acc = 0.0
-        self.counts = [[0, 0], [0, 0]]          # [kick, super] yerel basis sayaclari
-        self.used = [[0, 0], [0, 0]]
+        self.counts = [[0, 0, 0], [0, 0, 0]]    # [sut, super, omuz] yerel basis sayaclari
+        self.used = [[0, 0, 0], [0, 0, 0]]
         self.remote = {"l": 0, "r": 0, "j": 0, "k": 0, "s": 0}
         self.snaps = []
         self.snap = None
@@ -1589,6 +1677,9 @@ class MatchScene(Scene, OnlineMixin):
         self.goal_line = None
         self.bolts = []
         self.quakes = []
+        self.ref_card = 0.0
+        self.ref_x = W / 2 + 60
+        self.ref_pose = ["whistle", 1.2]
         self.pops = []   # [gorsel, x, y, boy, omur(, maks)]
         self.fw_queue = []
         self.last_count = None
@@ -1597,6 +1688,7 @@ class MatchScene(Scene, OnlineMixin):
         self.crowd = app.crowds[self.stad]
         self.crowd.excite = self.crowd.target = 0.15
         self.crowd.set_teams(self.chars[0], self.chars[1])
+        self.crowd.fill = 0.0
         self.banners = self._make_banners()
         app.sound.ambience(True)
         if self.world:
@@ -1623,6 +1715,10 @@ class MatchScene(Scene, OnlineMixin):
         over = self.snap and self.snap["ph"] == "over"
         if over:
             if self.over_t < 1.2:
+                return
+            if self.cup is not None:
+                if k in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
+                    self.app.go(CupScene(self.app, self.cup, result=self.snap["win"] == 0))
                 return
             if k in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 self._rematch()
@@ -1651,10 +1747,13 @@ class MatchScene(Scene, OnlineMixin):
                 self.counts[i][0] += 1
             if k in m["s"]:
                 self.counts[i][1] += 1
+            if k in m["o"]:
+                self.counts[i][2] += 1
 
     def _rematch(self):
         if self.mode in ("bot", "local2"):
-            self.app.go(MatchScene(self.app, self.mode, self.chars, self.dur, level=self.level))
+            self.app.go(MatchScene(self.app, self.mode, self.chars, self.dur, level=self.level,
+                                   weather=pick_weather(self.app.weather)))
             return
         if self.again[self.me]:
             return
@@ -1674,12 +1773,13 @@ class MatchScene(Scene, OnlineMixin):
 
     def _local_input(self, i, keymap, first):
         h = self._held(keymap)
-        kp = sp = False
+        kp = sp = op = False
         if first:
             kp = self.counts[i][0] > self.used[i][0]
             sp = self.counts[i][1] > self.used[i][1]
+            op = self.counts[i][2] > self.used[i][2]
             self.used[i] = list(self.counts[i])
-        return h["l"], h["r"], h["j"], kp, sp, h["k"]
+        return h["l"], h["r"], h["j"], kp, sp, h["k"], op
 
     # -------------------------------------------------- guncelleme
     def update(self, dt):
@@ -1726,16 +1826,17 @@ class MatchScene(Scene, OnlineMixin):
             if self.mode == "local2":
                 w.apply_input(1, *self._local_input(1, maps[1], first))
             elif self.mode == "bot":
-                w.apply_input(1, *self.bot.think(w, STEP))
+                w.apply_input(1, *self.bot.think(w, STEP), None, getattr(self.bot, "shoulder", False))
             else:
                 r = self.remote
-                kp = sp = False
+                kp = sp = op = False
                 if first:
                     kp = r.get("k", 0) > self.used[1][0]
                     sp = r.get("s", 0) > self.used[1][1]
-                    self.used[1] = [r.get("k", 0), r.get("s", 0)]
+                    op = r.get("o", 0) > self.used[1][2]
+                    self.used[1] = [r.get("k", 0), r.get("s", 0), r.get("o", 0)]
                 w.apply_input(1, bool(r.get("l")), bool(r.get("r")), bool(r.get("j")), kp, sp,
-                              bool(r.get("kh", 0)) if "kh" in r else None)
+                              bool(r.get("kh", 0)) if "kh" in r else None, op)
             w.step(STEP)
             first = False
         snap = w.snapshot()
@@ -1750,7 +1851,8 @@ class MatchScene(Scene, OnlineMixin):
     def _update_client(self, dt):
         h = self._held(KEYS_SOLO)
         self.conn.send({"t": "in", "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
-                        "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"])})
+                        "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"]),
+                        "o": self.counts[1][2]})
         now = time.time()
         msgs = self.pending + self.conn.poll()
         self.pending = []
@@ -1838,6 +1940,7 @@ class MatchScene(Scene, OnlineMixin):
                 self._say("BAŞLA!", GOLD, 0.8)
             elif ph == "over":
                 crowd.kick(1.0, snap["win"])
+                self._record(snap)
             self.prev_phase = ph
         # geri sayim / son saniyeler
         if ph == "ready":
@@ -1852,6 +1955,10 @@ class MatchScene(Scene, OnlineMixin):
             self.last_count = c
         for ev in snap.get("ev", []):
             name = ev.split(":")[0]
+            if name in ("whistle", "end", "pens"):
+                self.ref_pose = ["whistle", 1.0]
+            elif name in ("goal", "pen_goal"):
+                self.ref_pose = ["point", 2.2]
             if name in ("kick", "head", "bounce", "post", "whistle", "super_fire", "super_ice", "freeze",
                         "fire_hit", "jump", "swing", "shield", "block", "armed", "end", "golden", "pu_spawn",
                         "land"):
@@ -1901,6 +2008,47 @@ class MatchScene(Scene, OnlineMixin):
                         self._dust(pp[0] + k * 45, sim.GROUND, 3, 40)
                     self._burst(pp[0], sim.GROUND - 5, 24, [(150, 110, 70), (110, 80, 50)], 380, 0.8, 6, 900,
                                 "shard", 0.6)
+            elif name == "bicycle":
+                who = int(ev.split(":")[1])
+                pp = snap["p"][who]
+                snd.play("block", 0.05)
+                snd.play("cheer", 0.3, 0.8)
+                self.floaters.append(["RÖVAŞATA!", pp[0], pp[1] - 220, 1.5, GOLD])
+                self._burst(bx, by, 24, [WHITE, GOLD, (255, 220, 140)], 420, 0.45, 3, 300, "spark", 0)
+                self._ring(bx, by, 90, GOLD, 0.35)
+                self.pops.append(["fx_starburst", bx, by, 120, 0.35])
+                self.crowd.kick(0.8)
+                self.shake = max(self.shake, 0.25)
+            elif name == "shoulder":
+                snd.play("swing", 0.05, 1.0)
+            elif name == "bump":
+                who = int(ev.split(":")[1])
+                pp = snap["p"][who]
+                snd.play("fire_hit", 0.1, 0.5)
+                snd.play("ooh", 0.5, 0.6)
+                self.pops.append(["fx_spark", pp[0], pp[1] - 90, 70, 0.3])
+                self._burst(pp[0], pp[1] - 90, 12, [WHITE, GOLD], 260, 0.35, 3, 300, "spark", 0)
+                self.shake = max(self.shake, 0.15)
+                if random.random() < 0.35:
+                    self.ref_pose = ["card", 1.6]
+            elif name == "pens":
+                self._say("PENALTILAR!", GOLD, 2.0)
+                snd.play("golden", 0)
+                self.crowd.kick(0.8)
+            elif name in ("pen_goal", "pen_miss"):
+                who = int(ev.split(":")[1])
+                if name == "pen_goal":
+                    snd.play("goal", 0)
+                    self._say("GOL!", GOLD, 1.4)
+                    self.crowd.kick(1.0, who)
+                    gx = W - 60 if who == 0 else 60
+                    self.pops.append(["fx_confetti", gx, sim.GOAL_TOP + 40, 200, 1.0, 1.0])
+                else:
+                    snd.play("ooh", 0)
+                    self._say("KAÇTI!", (255, 120, 110), 1.4)
+                    self.crowd.kick(1.0, 1 - who)
+            elif name == "wind":
+                self.floaters.append(["RÜZGAR DÖNDÜ!", W // 2, 150, 1.5, (190, 230, 255)])
             elif name == "jump2":
                 who = int(ev.split(":")[1]) if ":" in ev else 0
                 pp = snap["p"][who]
@@ -1942,7 +2090,7 @@ class MatchScene(Scene, OnlineMixin):
                     kind, speed, own = parts[2], int(parts[3]), int(parts[4])
                 if own:
                     cat = "own"
-                elif kind in ("super", "head", "lob", "flick", "volley", "smash", "power"):
+                elif kind in ("super", "head", "lob", "flick", "volley", "smash", "power", "bicycle"):
                     cat = kind
                 elif speed > 760:
                     cat = "hard"
@@ -2054,8 +2202,33 @@ class MatchScene(Scene, OnlineMixin):
             crowd.target = max(crowd.target, 0.4)
         self.shake = max(self.shake, snap.get("shk", 0) or 0)
 
+    def weather_now(self):
+        return (self.snap or {}).get("wx", "clear")
+
+    def _record(self, snap):
+        if self.recorded:
+            return
+        self.recorded = True
+        rec = load_record()
+        win = snap["win"]
+        if self.mode == "local2":
+            r = rec.get("p1p2", [0, 0, 0])
+            r[2 if win == 2 else win] += 1
+            rec["p1p2"] = r
+            self.record_line = "Toplam:  1. Oyuncu %d  ·  2. Oyuncu %d  ·  Berabere %d" % tuple(r)
+        else:
+            key = "lan" if self.mode in ("host", "client") else "bot"
+            r = rec.get(key, [0, 0, 0])
+            r[1 if win == 2 else (0 if win == self.me else 2)] += 1
+            rec[key] = r
+            self.record_line = ("Rakibe karşı toplam:  " if key == "lan" else "Bilgisayara karşı toplam:  ") + \
+                "%d Galibiyet · %d Beraberlik · %d Mağlubiyet" % tuple(r)
+        save_record(rec)
+
     def _update_fx(self, dt):
         self.crowd.update(dt)
+        if self.crowd.fill < 1.0:
+            self.crowd.fill = min(1.0, self.crowd.fill + dt / 2.3)
         for p in self.parts:
             p.vy += p.g * dt
             if p.kind == "confetti":
@@ -2086,6 +2259,21 @@ class MatchScene(Scene, OnlineMixin):
             if self.ripple[2] > 1.4:
                 self.ripple = None
         self.goal_flash = max(0.0, self.goal_flash - dt)
+        self.ref_card = max(0.0, self.ref_card - dt)
+        if self.snap:
+            bxr = self.snap["b"][0]
+            tx = max(150, min(W - 150, bxr + (110 if bxr < W / 2 else -110)))
+            self.ref_x += (tx - self.ref_x) * min(1.0, dt * 1.2)
+        self.ref_pose[1] -= dt
+        for r_ in self.rain:
+            r_[1] += 900 * r_[2] * dt if self.weather_now() == "rain" else 70 * r_[2] * dt
+            r_[0] += (self.snap or {}).get("wd", 0) * dt * (0.6 if self.weather_now() != "rain" else 0.3)
+            if self.weather_now() == "snow":
+                r_[0] += math.sin(self.t * 1.5 + r_[2] * 9) * 20 * dt
+            if r_[1] > H:
+                r_[1] -= H + 20
+                r_[0] = random.uniform(-40, W + 40)
+            r_[0] %= W + 80
         for q in self.bolts + self.quakes:
             q[1] -= dt
         self.bolts = [q for q in self.bolts if q[1] > 0]
@@ -2209,6 +2397,7 @@ class MatchScene(Scene, OnlineMixin):
         for p in self.parts:
             if p.kind == "smoke":
                 self._draw_particle(s, p)
+        self._draw_ref(s, snap)
         for i, p in enumerate(snap["p"]):
             self._draw_player(s, i, p, snap)
         mg = snap.get("mg", [0, 0])
@@ -2256,6 +2445,7 @@ class MatchScene(Scene, OnlineMixin):
         if self.goal_flash > 0:
             v = int(110 * self.goal_flash / 0.35)
             s.add_full((v, v, int(v * 0.8)))
+        self._draw_weather(s, snap)
         self._draw_hud(s, snap)
         ox = oy = 0
         if self.shake > 0:
@@ -2289,6 +2479,76 @@ class MatchScene(Scene, OnlineMixin):
                 out.append([img, x, y, random.uniform(0, 6.28), side])
         return out
 
+    def _draw_ref(self, s, snap):
+        A = self.app.assets
+        if not A.ref:
+            return
+        pose = self.ref_pose[0] if self.ref_pose[1] > 0 else "idle"
+        img = A.ref.get(pose, A.ref.get("idle"))
+        bxr = snap["b"][0]
+        if bxr < self.ref_x:
+            img = A.flipped(img)
+        moving = abs(self.ref_x - (bxr + (110 if bxr < W / 2 else -110))) > 30 and pose == "idle"
+        bob = abs(math.sin(self.t * 9)) * 3 if moving else 0
+        sh = A.shadow(30)
+        s.blit(sh, sh.get_rect(center=(self.ref_x, sim.GROUND + 2)))
+        s.blit(img, img.get_rect(midbottom=(self.ref_x, sim.GROUND - bob)))
+
+    def _draw_weather(self, s, snap):
+        wx = snap.get("wx", "clear")
+        if wx == "clear":
+            return
+        A = self.app.assets
+        if wx == "rain":
+            s.overlay((10, 20, 40, 70))
+            drop = A.fx("wx_drop", 9)
+            wd = snap.get("wd", 0) * 0.02
+            for x, y, k in self.rain:
+                gd.line(s, (170, 200, 240), (x, y - 14 * k), (x - 3 - wd, y + 4), 1)
+                if drop is not None and int(x) % 3 == 0:
+                    s.blit(drop, (x - 3, y))
+                if y > sim.GROUND - 22 and int(x * 7) % 3 == 0:
+                    sp = A.fx("wx_splash", 14)
+                    if sp is not None:
+                        s.blit(sp, sp.get_rect(midbottom=(x, sim.GROUND + 3)))
+        elif wx == "snow":
+            s.overlay((200, 215, 240, 26))
+            flake = A.fx("wx_flake", 12)
+            for x, y, k in self.rain:
+                if flake is not None:
+                    s.blit(flake, (x, y))
+                else:
+                    gd.circle(s, (250, 252, 255), (x, y), 2 + k)
+            gd.rect(s, (235, 242, 252), (0, sim.GROUND + 2, W, 6))
+            pile = A.fx("wx_snowpile", 26)
+            if pile is not None:
+                for px_ in (150, 420, 860, 1130):
+                    s.blit(pile, pile.get_rect(midbottom=(px_, sim.GROUND + 8)))
+        elif wx == "wind":
+            wd = snap.get("wd", 0)
+            d = 1 if wd >= 0 else -1
+            gust = A.fx("wx_gust", 40)
+            leaf = A.fx("wx_leaf", 18)
+            for n, (x, y, k) in enumerate(self.rain[:28]):
+                yy = 140 + (y % 420)
+                xx = (x + self.t * abs(wd) * 1.6 * k) % (W + 80) - 40
+                if d < 0:
+                    xx = W - xx
+                if n % 4 == 0 and gust is not None:
+                    g_ = A.flipped(gust) if d < 0 else gust
+                    g_.set_alpha(110)
+                    s.blit(g_, (xx, yy))
+                    g_.set_alpha(255)
+                elif n % 4 == 1 and leaf is not None:
+                    r_ = tf.rotate(leaf, (self.t * 200 * k) % 360)
+                    s.blit(r_, (xx, yy + math.sin(self.t * 3 + k * 5) * 18))
+                elif n % 4 >= 2:
+                    gd.line(s, (230, 240, 255), (xx, yy), (xx + d * 50 * k, yy), 2)
+            pnl = pygame.Rect(0, 0, 150, 30)
+            pnl.midtop = (W // 2, 98)
+            pill(s, pnl, (40, 70, 120), radius=12)
+            draw_text(s, ("RÜZGAR →" if d > 0 else "← RÜZGAR"), 15, (pnl.centerx, pnl.centery - 1), WHITE, outline=2)
+
     def _draw_banners(self, s):
         ex = self.crowd.excite
         sad = self.crowd.boost_side if self.crowd.boost_t > 0 else -1
@@ -2297,9 +2557,9 @@ class MatchScene(Scene, OnlineMixin):
             lift = (ex * 22 * abs(math.sin(self.t * 7 + ph))) if happy else 0
             ang = math.sin(self.t * (2.2 + ex * 4) + ph) * (3 + ex * 6 if happy else 1.5)
             cy = y - lift
-            for dx in (-60, 60):
-                gd.line(s, (70, 60, 55), (x + dx, cy + 8), (x + dx, cy + 46), 3)
-            r_ = tf.rotate(img, ang)
+            for dx in (-36, 36):
+                gd.line(s, (70, 60, 55), (x + dx, cy + 6), (x + dx, cy + 30), 2)
+            r_ = tf.rotozoom(img, ang, 0.6)
             s.blit(r_, r_.get_rect(center=(x, cy)))
 
     def _draw_boards(self, s, spec, snap):
@@ -2458,6 +2718,16 @@ class MatchScene(Scene, OnlineMixin):
         poses = A.poses[char]
         ice = frozen > 0
         celebrate = (snap["ph"] == "goal" and snap.get("scr") == i) or (snap["ph"] == "over" and snap["win"] == i)
+        bike = p[16] if len(p) > 16 else 0
+        shoulder = p[17] if len(p) > 17 else 0
+        if bike > 0:
+            if "bike" in poses:
+                return poses["bike"], "bike", "bike"
+            return tf.rotate(A.kick[char], 150), "bike", "kick"
+        if shoulder > 0:
+            if "shoulder" in poses:
+                return poses["shoulder"], "shoulder", "shoulder"
+            return tf.rotate(poses.get("run1", A.idle[char]), -16), "shoulder", "run1"
         if kick_t > 0.04:
             return (A.kick_ice if ice else A.kick)[char], "kick", "kick"
         if celebrate and "celeb" in poses:
@@ -2493,6 +2763,8 @@ class MatchScene(Scene, OnlineMixin):
             tilt = -6 * face if vx * face > 0 else 0
         st = self.pstate[i]
         sx = sy = 1.0
+        if len(p) > 18 and p[18] and pose == "idle":
+            sy, sx = 0.74, 1.12   # penaltida comelen kaleci
         if st["sq"] > 0:
             k = st["sq"] / 0.16
             sx, sy = 1 + 0.16 * k, 1 - 0.14 * k
@@ -2601,7 +2873,9 @@ class MatchScene(Scene, OnlineMixin):
         board = pygame.Rect(cx - 230, 10, 460, 78)
         frame(s, board)
         tm = snap["tm"]
-        if snap["gg"]:
+        if snap.get("pen"):
+            tt, tc = "PEN", GOLD
+        elif snap["gg"]:
             tt, tc = "ALTIN GOL", GOLD
         else:
             sec = max(0, int(math.ceil(tm)))
@@ -2683,7 +2957,43 @@ class MatchScene(Scene, OnlineMixin):
                 ix = (bar.left + 16 + k * 34) if i == 0 else (bar.right - 16 - k * 34)
                 s.blit(img, img.get_rect(center=(ix, bar.bottom + 46)))
 
+    def _draw_pens(self, s, snap):
+        pen = snap.get("pen")
+        if not pen:
+            return
+        turn, res_ = pen
+        box = pygame.Rect(0, 0, 360, 74)
+        box.midtop = (W // 2, 96)
+        frame(s, box)
+        draw_text(s, "PENALTILAR", 16, (box.centerx, box.y + 16), GOLD, outline=2)
+        for i in (0, 1):
+            r = res_[i]
+            n = max(5, len(r))
+            for k in range(min(n, 8)):
+                cx = box.centerx + (-1 if i == 0 else 1) * (30 + k * 20) if False else \
+                    (box.x + 30 + k * 20 if i == 0 else box.right - 30 - k * 20)
+                cy = box.y + 46
+                if k < len(r):
+                    col = (60, 210, 90) if r[k] else (230, 70, 60)
+                    gd.circle(s, (12, 14, 34), (cx, cy), 9)
+                    gd.circle(s, col, (cx, cy), 7)
+                else:
+                    gd.circle(s, (12, 14, 34), (cx, cy), 9)
+                    gd.circle(s, (50, 60, 95), (cx, cy), 7)
+            draw_text(s, str(sum(r)), 26, (box.centerx + (-24 if i == 0 else 24), box.y + 46), WHITE, outline=3)
+        if snap["ph"] == "pen_ready":
+            shooter = snap["p"][turn][9]
+            if self.mode == "local2":
+                who = "%d. OYUNCU" % (turn + 1)
+            else:
+                who = "SEN" if turn == self.me else "RAKİP"
+            draw_text(s, "%s ATIYOR · %s" % (who, sim.DISPLAY_NAMES[shooter]), 26, (W // 2, 290), WHITE, outline=4)
+            tip = "Şut: yerden  ·  Şut + YUKARI: üst köşe" if (self.mode == "local2" or turn == self.me) \
+                else "Kaleci: ZIPLA (üst köşe) ya da BEKLE (yerden)"
+            draw_text(s, tip, 18, (W // 2, 324), (200, 225, 255), outline=2, title=False)
+
     def _draw_overlays(self, s, snap):
+        self._draw_pens(s, snap)
         for txt, x, y, life, col in self.floaters:
             draw_text(s, txt, 30, (x, y), col, outline=4, alpha=int(255 * min(1, life * 2)))
         if self.banner:
@@ -2712,18 +3022,46 @@ class MatchScene(Scene, OnlineMixin):
                 t, c = "KAZANDIN!", GOLD
             else:
                 t, c = "KAYBETTİN", (255, 110, 100)
-            frame(s, (W // 2 - 340, 170, 680, 380))
-            draw_text(s, t, 72, (W // 2, 250), c, outline=6)
+            frame(s, (W // 2 - 390, 70, 780, 590))
+            draw_text(s, t, 64, (W // 2, 128), c, outline=6)
             sc = snap["sc"]
             A = self.app.assets
             for i in (0, 1):
                 img = (A.big_celeb if win in (i,) else A.big)[snap["p"][i][9]]
                 if i == 1:
                     img = A.flipped(img)
-                img = tf.smoothscale(img, (int(img.get_width() * 0.62), int(img.get_height() * 0.62)))
-                s.blit(img, img.get_rect(midbottom=(W // 2 + (-230 if i == 0 else 230), 470)))
-            draw_text(s, "%d  -  %d" % (sc[0], sc[1]), 84, (W // 2, 375), WHITE, outline=6)
-            if self.mode in ("bot", "local2"):
+                img = tf.smoothscale(img, (int(img.get_width() * 0.55), int(img.get_height() * 0.55)))
+                s.blit(img, img.get_rect(midbottom=(W // 2 + (-270 if i == 0 else 270), 300)))
+            draw_text(s, "%d  -  %d" % (sc[0], sc[1]), 76, (W // 2, 230), WHITE, outline=6)
+            if snap.get("pen"):
+                r_ = snap["pen"][1]
+                draw_text(s, "Penaltılar: %d - %d" % (sum(r_[0]), sum(r_[1])), 22, (W // 2, 282), GOLD, outline=3)
+            st = snap.get("st") or self.last_stats
+            if st:
+                self.last_stats = st
+                poss = st["poss"]
+                tot = max(0.01, poss[0] + poss[1])
+                rows = [("ŞUT", st["shots"][0], st["shots"][1], 0),
+                        ("KAFA", st["heads"][0], st["heads"][1], 1),
+                        ("KURTARIŞ", st["saves"][0], st["saves"][1], 5),
+                        ("TOPA SAHİP OLMA", "%%%d" % round(100 * poss[0] / tot), "%%%d" % round(100 * poss[1] / tot), 2),
+                        ("EN SERT ŞUT", "%d km/s" % (st["fast"][0] // 8), "%d km/s" % (st["fast"][1] // 8), 3)]
+                y = 336
+                for lab, v0, v1, ic in rows:
+                    rr = pygame.Rect(W // 2 - 330, y - 17, 660, 34)
+                    pill(s, rr, (24, 34, 70), radius=12, gloss=False)
+                    icon = A.stat_badges[ic] if A.stat_badges else None
+                    if icon is not None:
+                        s.blit(icon, icon.get_rect(center=(W // 2 - 104, y)))
+                    draw_text(s, lab, 17, (W // 2 + 10, y - 1), (205, 218, 245), outline=2)
+                    draw_text(s, str(v0), 22, (W // 2 - 300, y - 1), P_COLORS[0], anchor="midleft", outline=3)
+                    draw_text(s, str(v1), 22, (W // 2 + 300, y - 1), P_COLORS[1], anchor="midright", outline=3)
+                    y += 42
+            if self.record_line:
+                draw_text(s, self.record_line, 17, (W // 2, 560), (255, 225, 140), outline=2, title=False)
+            if self.cup is not None:
+                hint = "ENTER: devam"
+            elif self.mode in ("bot", "local2"):
                 hint = "ENTER: rövanş     ESC: karakter seçimi"
             else:
                 me_ok = self.again[self.me]
@@ -2733,7 +3071,7 @@ class MatchScene(Scene, OnlineMixin):
                     hint = "Rakibin rövanş onayı bekleniyor..."
                 elif other_ok:
                     hint = "Rakip rövanş istiyor!  ENTER: kabul"
-            draw_text(s, hint, 24, (W // 2, 500), (220, 230, 250), outline=3, title=False)
+            draw_text(s, hint, 22, (W // 2, 610), (220, 230, 250), outline=3, title=False)
         if self.paused:
             s.overlay((5, 8, 20, 170))
             draw_text(s, "DURAKLATILDI", 70, (W // 2, 280), GOLD, outline=6)
@@ -2742,6 +3080,181 @@ class MatchScene(Scene, OnlineMixin):
             frame(s, (W // 2 - 290, 290, 580, 140))
             draw_text(s, "Maçtan çıkılsın mı?", 34, (W // 2, 335), WHITE, outline=3)
             draw_text(s, "Q: çık     ESC: oyuna dön", 24, (W // 2, 385), (220, 230, 250), outline=2, title=False)
+
+
+# ====================================================================== turnuva
+CUP_STAGES = [   # (ad, bot seviyesi, hava, stadyum)
+    ("ÇEYREK FİNAL 1", 0, "clear", 1),
+    ("ÇEYREK FİNAL 2", 1, "rain", 0),
+    ("YARI FİNAL", 1, "wind", 1),
+    ("FİNAL ÖNCESİ", 2, "snow", 0),
+    ("BÜYÜK FİNAL", 2, "clear", 1),
+]
+
+
+def new_cup(char):
+    opps = [c for c in range(6) if c != char]
+    random.shuffle(opps)
+    return {"char": char, "stage": 0, "opps": opps[:5], "lost": False}
+
+
+class CupScene(Scene):
+    def __init__(self, app, cup, result=None):
+        super().__init__(app)
+        self.cup = cup
+        self.t = 0
+        self.spark = Sparkles(30)
+        self.msg = None
+        self.champion = False
+        if result is True:
+            cup["stage"] += 1
+            cup["lost"] = False
+            self.msg = ("KAZANDIN! SIRADAKİ TURA GEÇTİN", (120, 255, 140))
+            app.sound.play("cheer", 0)
+            if cup["stage"] >= len(CUP_STAGES):
+                rec = load_record()
+                rec["cups"] = rec.get("cups", 0) + 1
+                save_record(rec)
+                self.champion = True
+        elif result is False:
+            cup["lost"] = True
+            self.msg = ("ELENDİN! ENTER İLE TEKRAR DENE", (255, 120, 110))
+            app.sound.play("ooh", 0)
+
+    def update(self, dt):
+        self.t += dt
+        self.spark.update(dt)
+        if self.champion:
+            self.app.go(TrophyScene(self.app, self.cup))
+
+    def _play(self):
+        if self.champion:
+            return
+        c = self.cup
+        name, lvl, wx, stad = CUP_STAGES[c["stage"]]
+        self.app.stadium = stad
+        opp = c["opps"][c["stage"]]
+        self.app.go(MatchScene(self.app, "bot", [c["char"], opp], 90, level=lvl, weather=wx, cup=c))
+
+    def handle(self, e):
+        if e.type == pygame.KEYDOWN:
+            if e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                self.app.sound.play("kick")
+                self._play()
+            elif e.key == pygame.K_ESCAPE:
+                self.app.go(MenuScene(self.app))
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            self._play()
+
+    def draw(self, s):
+        A = self.app.assets
+        menu_backdrop(s, self.t, sparkles=self.spark)
+        if self.champion:
+            return
+        draw_title(s, 62, self.t, small=True)
+        frame(s, (90, 120, W - 180, 520))
+        draw_text(s, "KUPA YOLU", 40, (W // 2, 160), GOLD, outline=5)
+        trophy = A.cup_art.get("cup_gold")
+        if trophy is not None:
+            s.blit(trophy, trophy.get_rect(center=(W - 190, 190 + math.sin(self.t * 2) * 4)))
+        c = self.cup
+        me = A.portrait_big[c["char"]]
+        s.blit(me, me.get_rect(center=(190, 195)))
+        draw_text(s, sim.DISPLAY_NAMES[c["char"]], 20, (190, 258), WHITE, outline=3)
+        n = len(CUP_STAGES)
+        x0, x1, y = 190, W - 190, 400
+        gd.line(s, (12, 14, 34), (x0, y), (x1, y), 12)
+        gd.line(s, (80, 90, 130), (x0, y), (x1, y), 6)
+        done_x = x0 + (x1 - x0) * min(c["stage"], n - 1) / (n - 1)
+        if c["stage"] > 0:
+            gd.line(s, GOLD, (x0, y), (done_x, y), 6)
+        for k, (name, lvl, wx, stad) in enumerate(CUP_STAGES):
+            x = x0 + (x1 - x0) * k / (n - 1)
+            cur = k == c["stage"]
+            won = k < c["stage"]
+            badge = A.cup_art.get("st_check" if won else ("st_skull" if k == n - 1 else
+                                                          ("st_swords" if cur else "st_lock")))
+            r = 46 if cur else 38
+            if cur:
+                fx.blit_glow(s, x, y, 80 + 8 * math.sin(self.t * 4), (70, 55, 10))
+            opp = c["opps"][k]
+            por = A.portrait_big[opp] if (won or cur) else None
+            gd.circle(s, (12, 14, 34), (x, y), r + 4)
+            gd.circle(s, GOLD if cur else ((60, 200, 90) if won else (70, 80, 120)), (x, y), r + 1)
+            gd.circle(s, (18, 26, 56), (x, y), r - 3)
+            if por is not None:
+                p2 = tf.smoothscale(por, (r * 2 - 8, r * 2 - 8))
+                s.blit(p2, p2.get_rect(center=(x, y)))
+            if badge is not None:
+                s.blit(badge, badge.get_rect(center=(x + r * 0.7, y - r * 0.7)))
+            draw_text(s, name, 15 if not cur else 17, (x, y + r + 22), GOLD if cur else WHITE, outline=2)
+            sub = "%s · %s" % (dict(WEATHERS)[wx], STADIUMS[stad]["name"])
+            draw_text(s, sub, 12, (x, y + r + 44), (190, 205, 235), outline=2, title=False)
+            draw_text(s, LEVELS[lvl], 12, (x, y - r - 16), (255, 200, 120), outline=2, title=False)
+        if self.msg:
+            draw_text(s, self.msg[0], 26, (W // 2, 540), self.msg[1], outline=3)
+        name = CUP_STAGES[c["stage"]][0]
+        opp = c["opps"][c["stage"]]
+        draw_text(s, "%s: %s  vs  %s" % (name, sim.DISPLAY_NAMES[c["char"]], sim.DISPLAY_NAMES[opp]), 22,
+                  (W // 2, 584), WHITE, outline=3)
+        draw_text(s, "ENTER: maça başla   ·   ESC: ana menü", 17, (W // 2, 620), (200, 210, 230), outline=2,
+                  title=False)
+
+
+class TrophyScene(Scene):
+    def __init__(self, app, cup):
+        super().__init__(app)
+        self.cup = cup
+        self.t = 0
+        self.spark = Sparkles(80)
+        self.fw = []
+        app.sound.play("golden", 0)
+        app.sound.play("goal", 0)
+
+    def update(self, dt):
+        self.t += dt
+        self.spark.update(dt)
+        if random.random() < dt * 3:
+            self.fw.append([random.uniform(150, W - 150), random.uniform(80, 300),
+                            random.choice(["fx_fw_gold", "fx_fw_red", "fx_fw_blue"]), 1.0])
+            self.app.sound.play("pop", 0.05, 0.5)
+        for f in self.fw:
+            f[3] -= dt
+        self.fw = [f for f in self.fw if f[3] > 0]
+
+    def handle(self, e):
+        if self.t > 1.5 and e.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+            self.app.go(MenuScene(self.app))
+
+    def draw(self, s):
+        A = self.app.assets
+        menu_backdrop(s, self.t, dark=False, sparkles=self.spark)
+        for x, y, name, life in self.fw:
+            img = A.fx(name, 200)
+            if img is not None:
+                k = 0.4 + 0.8 * min(1, (1 - life) * 2.5)
+                im = tf.rotozoom(img, 0, k)
+                im.set_alpha(int(255 * min(1, life * 2)))
+                s.blit(im, im.get_rect(center=(x, y)))
+        pod = A.cup_art.get("podium_big")
+        base_y = 560
+        if pod is not None:
+            pr = pod.get_rect(midbottom=(W // 2, 712))
+            s.blit(pod, pr)
+            base_y = pr.top + 10
+        hero = A.hero[self.cup["char"]][1]
+        hop = abs(math.sin(self.t * 6)) * 14
+        s.blit(hero, hero.get_rect(midbottom=(W // 2, base_y - hop)))
+        trophy = A.cup_art.get("cup_gold_big")
+        if trophy is not None:
+            fx.blit_glow(s, W // 2 + 120, 360, 140, (80, 60, 10))
+            s.blit(trophy, trophy.get_rect(center=(W // 2 + 130, 380 - hop * 0.5)))
+        draw_text(s, "ŞAMPİYON!", 92, (W // 2, 120), GOLD, outline=7)
+        draw_text(s, sim.DISPLAY_NAMES[self.cup["char"]], 40, (W // 2, 205), WHITE, outline=5)
+        cups = load_record().get("cups", 0)
+        draw_text(s, "Toplam kupa: %d" % cups, 22, (W // 2, 248), (255, 225, 140), outline=3, title=False)
+        if self.t > 1.5:
+            draw_text(s, "Devam etmek için bir tuşa bas", 18, (W // 2, H - 20), WHITE, outline=2, title=False)
 
 
 # ====================================================================== uygulama
@@ -2774,6 +3287,7 @@ class App:
         ASSETS = self.assets
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
+        self.weather = 0
         self.sound = Sound()
         self.clock = pygame.time.Clock()
         self.running = True
