@@ -1584,6 +1584,7 @@ class MatchScene(Scene, OnlineMixin):
         self.goal_line = None
         self.bolts = []
         self.quakes = []
+        self.pops = []   # [gorsel, x, y, boy, omur]
         self.last_count = None
         self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
         self.stad = app.stadium if 0 <= app.stadium < len(STADIUMS) else 0
@@ -1873,6 +1874,8 @@ class MatchScene(Scene, OnlineMixin):
                     fx_from = int(parts_[2]) if len(parts_) > 2 else pp[0]
                     self.bolts.append([fx_from, 0.35])
                     self.bolts.append([pp[0], 0.45])
+                    self.pops.append(["fx_flash", pp[0], pp[1] - 70, 150, 0.35])
+                    self.pops.append(["fx_flash", fx_from, sim.GROUND - 70, 110, 0.3])
                     self.flashes.append([pp[0], pp[1] - 80, 0.2])
                     self._burst(pp[0], pp[1] - 70, 26, [(255, 240, 120), WHITE, (120, 200, 255)], 420, 0.4, 3, 0,
                                 "spark", 0)
@@ -1881,6 +1884,10 @@ class MatchScene(Scene, OnlineMixin):
                     snd.play("fire_hit", 0)
                     snd.play("land", 0)
                     self.quakes.append([pp[0], 0.9])
+                    op = snap["p"][1 - who]
+                    self.pops.append(["fx_dust", pp[0] - 90, sim.GROUND - 40, 90, 0.7])
+                    self.pops.append(["fx_dust", pp[0] + 90, sim.GROUND - 40, 90, 0.7])
+                    self.pops.append(["fx_spark", op[0], op[1] - 60, 80, 0.4])
                     self._ring(pp[0], sim.GROUND, 160, (230, 170, 110), 0.5)
                     for k in range(-5, 6):
                         self._dust(pp[0] + k * 45, sim.GROUND, 3, 40)
@@ -2057,6 +2064,9 @@ class MatchScene(Scene, OnlineMixin):
         for q in self.bolts + self.quakes:
             q[1] -= dt
         self.bolts = [q for q in self.bolts if q[1] > 0]
+        for q in self.pops:
+            q[4] -= dt
+        self.pops = [q for q in self.pops if q[4] > 0]
         self.quakes = [q for q in self.quakes if q[1] > 0]
         if self.goal_line:
             self.goal_line[1] -= dt
@@ -2180,8 +2190,16 @@ class MatchScene(Scene, OnlineMixin):
                 gd.circle(s, (200, 130, 255), (b[0], b[1]), 36 + 4 * math.sin(self.t * 12), 3)
         self._draw_ball(s, b)
         self._draw_goal_front(s, snap)
+        for name_, px_, py_, sz, life in self.pops:
+            img = A.fx(name_, sz)
+            if img is not None:
+                k_ = 1 + (0.6 - min(0.6, life)) * 0.8
+                im2 = tf.rotozoom(img, 0, k_) if name_ != "fx_dust" else img
+                im2.set_alpha(int(255 * min(1, life * 3)))
+                s.blit(im2, im2.get_rect(center=(px_, py_)))
+                im2.set_alpha(255)
         for bx_, life in self.bolts:
-            img = A.fx("fx_bolt", sim.GROUND - 40)
+            img = A.fx("fx_bolt", 300)
             if img is not None:
                 img.set_alpha(int(255 * min(1, life * 4)))
                 s.blit(img, img.get_rect(midbottom=(bx_, sim.GROUND)))
@@ -2318,17 +2336,6 @@ class MatchScene(Scene, OnlineMixin):
         gl = snap.get("gl", [0, 0])
         for i in range(2):
             if gl[i] > 0:
-                x = sim.GOAL_D + 18 if i == 0 else W - sim.GOAL_D - 18
-                img = A.fx("fx_glove", (GR - GT) * 0.95)
-                blink = gl[i] > 1.2 or int(self.t * 10) % 2
-                if img is not None and blink:
-                    if i == 1:
-                        img = A.flipped(img)
-                    bob = math.sin(self.t * 4) * 4
-                    s.blit(img, img.get_rect(midbottom=(x, GR + bob)))
-                elif blink:
-                    gd.ellipse(s, (255, 214, 60), (x - 30, GT + 10, 60, GR - GT - 10))
-                    gd.ellipse(s, (12, 14, 34), (x - 30, GT + 10, 60, GR - GT - 10), 4)
                 continue
             if snap["sh"][i] > 0:
                 x = sim.GOAL_D + 2 if i == 0 else W - sim.GOAL_D - 2
@@ -2344,6 +2351,21 @@ class MatchScene(Scene, OnlineMixin):
 
     def _draw_goal_front(self, s, snap):
         A = self.app.assets
+        GT, GR = sim.GOAL_TOP, sim.GROUND
+        gl = snap.get("gl", [0, 0])
+        for i in range(2):
+            if gl[i] <= 0 or not (gl[i] > 1.2 or int(self.t * 10) % 2):
+                continue
+            x = sim.GOAL_D + 26 if i == 0 else W - sim.GOAL_D - 26
+            img = A.fx("fx_glove", (GR - GT) * 0.92)
+            bob = math.sin(self.t * 4) * 4
+            fx.blit_glow(s, x, GT + (GR - GT) * 0.5, 120, (60, 50, 10))
+            if img is not None:
+                if i == 1:
+                    img = A.flipped(img)
+                s.blit(img, img.get_rect(midbottom=(x, GR + 4 + bob)))
+            else:
+                gd.ellipse(s, (255, 214, 60), (x - 30, GT + 10, 60, GR - GT - 10))
         gy = A.goal_pos[1]
         s.blit(A.goal_front, (A.goal_post_x, gy))
         s.blit(A.goal_front_r, (W - A.goal_post_x - A.goal_front_r.get_width(), gy))
@@ -2431,9 +2453,14 @@ class MatchScene(Scene, OnlineMixin):
         else:
             s.blit(img, rect)
         if stun > 0:
-            for k in range(3):
-                a = self.t * 8 + k * 2.1
-                self._star(s, x + math.cos(a) * 28, y - h - 8 + math.sin(a) * 8, 7, GOLD)
+            st_img = A.fx("fx_stars", 46)
+            if st_img is not None:
+                sq = tf.smoothscale(st_img, (st_img.get_width(), max(4, st_img.get_height() * 0.45)))
+                s.blit(sq, sq.get_rect(center=(x + math.sin(self.t * 6) * 4, y - h - 6)))
+            else:
+                for k in range(3):
+                    a = self.t * 8 + k * 2.1
+                    self._star(s, x + math.cos(a) * 28, y - h - 8 + math.sin(a) * 8, 7, GOLD)
         if jump_t > 0:
             gd.ellipse(s, (120, 255, 160), (x - 32, y - 7, 64, 14), 3)
         label = None
