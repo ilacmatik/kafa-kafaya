@@ -4055,7 +4055,7 @@ def make_touch_buttons():
                 t = text_surf(TOUCH_LABELS[act], fs, (255, 255, 255), 2, title=True).hi
                 surf.blit(t, t.get_rect(center=(c, ty)))
         on = surf.copy()          # basiliyken tam opak
-        surf.fill((255, 255, 255, 135), special_flags=pygame.BLEND_RGBA_MULT)
+        surf.fill((255, 255, 255, 165), special_flags=pygame.BLEND_RGBA_MULT)
         out[act] = gfx.Img(surf)
         out_on[act] = gfx.Img(on)
     return out, out_on
