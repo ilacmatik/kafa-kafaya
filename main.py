@@ -1246,12 +1246,12 @@ class HelpScene(Scene):
             ("Şut", "BOŞLUK  (basılı tut = şarjlı şut)"),
             ("Aşırtma", "Şut atarken S / ↓ basılı olsun"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
-            ("Süper güç", "Q  (bar dolunca)"),
+            ("Süper güç", "S / ↓ iki kez hızlı bas  (bar dolunca)"),
             ("Omuz at", "E  veya  Sağ CTRL"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
-            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S aşırtma, Q süper, E omuz"),
-            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ aşırtma, Sağ SHIFT süper, Sağ CTRL omuz"),
+            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S aşırtma, S-S süper, E omuz"),
+            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ aşırtma, ↓-↓ süper, Sağ CTRL omuz"),
         ]
         y = 168
         for a, b in rows:
@@ -1823,6 +1823,7 @@ class MatchScene(Scene, OnlineMixin):
         self.acc = 0.0
         self.counts = [[0, 0, 0], [0, 0, 0]]    # [sut, super, omuz] yerel basis sayaclari
         self.used = [[0, 0, 0], [0, 0, 0]]
+        self.last_down = [-9.0, -9.0]
         self.remote = {"l": 0, "r": 0, "j": 0, "k": 0, "s": 0}
         self.snaps = []
         self.snap = None
@@ -1924,6 +1925,13 @@ class MatchScene(Scene, OnlineMixin):
                 self.counts[i][1] += 1
             if k in m["o"]:
                 self.counts[i][2] += 1
+            if k in m["d"]:
+                # asagi tusuna iki kez hizli basmak: super guc
+                if self.t - self.last_down[i] < 0.35:
+                    self.counts[i][1] += 1
+                    self.last_down[i] = -9.0
+                else:
+                    self.last_down[i] = self.t
 
     def _rematch(self):
         if self.mode in ("bot", "local2"):
@@ -3171,7 +3179,7 @@ class MatchScene(Scene, OnlineMixin):
                 if armed > 0 or snap.get("mg", [0, 0])[i] > 0:
                     t = "SÜPER AKTİF!"
                 else:
-                    t = POWERS[pw][0] + " HAZIR · %s" % ("Q" if self.mode != "local2" else ("Q" if i == 0 else "Sağ SHIFT"))
+                    t = POWERS[pw][0] + " HAZIR · %s" % ("↓ ↓" if self.mode != "local2" else ("S S" if i == 0 else "↓ ↓"))
                 draw_text(s, t, 16, (bar.centerx, bar.bottom + 14), col, outline=3)
             # aktif guc ikonlari
             icons = []

@@ -37,21 +37,21 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Şut       : BOŞLUK  (basılı tutup bırak = şarjlı, daha sert şut)
   Çift zıpla: havadayken tekrar W / Yukarı ok
   Aşırtma   : şut atarken S / Aşağı ok basılı olsun
-  Süper güç : Q  (bar dolunca)
+  Süper güç : S / Aşağı ok'a iki kez hızlıca bas (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
   Omuz at   : E  veya  Sağ CTRL (ağır karakter hafifi savurur)
   Rövaşata  : havadayken top kafanın üstündeyse şut
   Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)
 
   Tek PC 2 kişi modunda:
-  1. oyuncu: A/D, W zıpla, BOŞLUK şut, S aşırtma, Q süper
-  2. oyuncu: oklar, Yukarı zıpla, ENTER şut, Aşağı aşırtma, Sağ SHIFT süper
+  1. oyuncu: A/D, W zıpla, BOŞLUK şut, S aşırtma, S-S süper
+  2. oyuncu: oklar, Yukarı zıpla, ENTER şut, Aşağı aşırtma, Aşağı-Aşağı süper
 
   - Koşarak şut: alçak ve sert, falsolu. Geri giderken şut: yüksek aşırtma.
   - Top ayağın altındaysa havalanır, dizdeyse sert gider, havadaysa vole olur.
   - Topu havadaki güç simgelerine çarptır: HIZ, SÜPER ZIPLAMA,
     BUZ KALKAN (kaleni korur), DONDURMA (rakibi dondurur), ALTIN (süper bar dolar).
-  - Her karakterin kendi süper gücü var (bar dolunca Q):
+  - Her karakterin kendi süper gücü var (bar dolunca aşağı-aşağı):
       ALEV: Ateş Şutu   KAPTAN: Mıknatıs (top 3 sn ayağına yapışır)
       DUVAR: Dev Eldiven (kaleyi kapatır)   SARI: Buz Şutu
       ŞİMŞEK: Yıldırım (topa ışınlanır, hızlanır)   TANK: Deprem (rakip sendeler)
