@@ -44,7 +44,10 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   - Top ayağın altındaysa havalanır, dizdeyse sert gider, havadaysa vole olur.
   - Topu havadaki güç simgelerine çarptır: HIZ, SÜPER ZIPLAMA,
     BUZ KALKAN (kaleni korur), DONDURMA (rakibi dondurur), ALTIN (süper bar dolar).
-  - Süper bar dolunca S'ye bas, sonraki vuruşun ATEŞ ya da BUZ şutu olur.
+  - Her karakterin kendi süper gücü var (bar dolunca S / Aşağı ok):
+      ALEV: Ateş Şutu   KAPTAN: Mıknatıs (top 3 sn ayağına yapışır)
+      DUVAR: Dev Eldiven (kaleyi kapatır)   SARI: Buz Şutu
+      ŞİMŞEK: Yıldırım (topa ışınlanır, hızlanır)   TANK: Deprem (rakip sendeler)
   - Sana süper şut gelirken tam zamanında BOŞLUK'a basarsan kurtarırsın.
   - Süre bitince skor eşitse ALTIN GOL: ilk golü atan kazanır.
 

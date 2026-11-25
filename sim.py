@@ -30,11 +30,11 @@ PU_KINDS = ["speed", "jump", "shield", "freeze", "gold"]
 # isim, hiz, ziplama, sut gucu, boy carpani, kafa carpani, super tipi
 CHARACTERS = [
     {"name": "ALEV",   "speed": 335, "jump": 650, "kick": 1.12, "scale": 1.00, "head": 1.00, "power": "fire"},
-    {"name": "KAPTAN", "speed": 320, "jump": 655, "kick": 1.06, "scale": 1.02, "head": 1.05, "power": "fire"},
-    {"name": "DUVAR",  "speed": 300, "jump": 700, "kick": 0.95, "scale": 1.00, "head": 1.12, "power": "ice"},
+    {"name": "KAPTAN", "speed": 320, "jump": 655, "kick": 1.06, "scale": 1.02, "head": 1.05, "power": "magnet"},
+    {"name": "DUVAR",  "speed": 300, "jump": 700, "kick": 0.95, "scale": 1.00, "head": 1.12, "power": "glove"},
     {"name": "SARI",   "speed": 322, "jump": 715, "kick": 1.00, "scale": 1.03, "head": 1.00, "power": "ice"},
-    {"name": "SIMSEK", "speed": 385, "jump": 645, "kick": 0.95, "scale": 0.95, "head": 0.95, "power": "fire"},
-    {"name": "TANK",   "speed": 275, "jump": 610, "kick": 1.30, "scale": 1.08, "head": 1.10, "power": "ice"},
+    {"name": "SIMSEK", "speed": 385, "jump": 645, "kick": 0.95, "scale": 0.95, "head": 0.95, "power": "bolt"},
+    {"name": "TANK",   "speed": 275, "jump": 610, "kick": 1.30, "scale": 1.08, "head": 1.10, "power": "quake"},
 ]
 # ekranda gosterilen isimler (Turkce karakterli)
 DISPLAY_NAMES = ["ALEV", "KAPTAN", "DUVAR", "SARI", "ŞİMŞEK", "TANK"]
@@ -84,6 +84,7 @@ class Player:
         self.charging = False
         self.charge = 0.0
         self.kick_power = 1.0
+        self.magnet_t = 0.0
         self.move = 0
 
     # carpisma daireleri
@@ -142,6 +143,7 @@ class World:
         self.pu = None             # [tur, x, y, omur]
         self.pu_timer = random.uniform(7, 11)
         self.shield = [0.0, 0.0]   # kendi kalesini koruyan buz duvari
+        self.glove = [0.0, 0.0]    # DUVAR'in dev eldiveni (gorsel)
         self.scorer = -1
         self.clock = 0.0
         self.last_kind = "shot"
@@ -193,15 +195,50 @@ class World:
             if p.charging and not kick_held:
                 p.charging = False
                 self._swing(p, p.charge)
-        if super_pressed and p.meter >= 100 and p.armed <= 0:
-            p.meter = 0
-            p.armed = 5.0
-            self.events.append("armed")
-            b = self.ball
-            if math.hypot(b.x - p.x, b.y - (p.y - p.h * 0.5)) < 150:
-                self._super_shot(p)
+        if super_pressed and p.meter >= 100 and p.armed <= 0 and p.magnet_t <= 0:
+            self._use_power(p)
 
     # ------------------------------------------------------------ yardimcilar
+    def _use_power(self, p):
+        pw = p.stats["power"]
+        b = self.ball
+        o = self.players[1 - p.idx]
+        p.meter = 0
+        if pw in ("fire", "ice"):
+            p.armed = 5.0
+            self.events.append("armed")
+            if math.hypot(b.x - p.x, b.y - (p.y - p.h * 0.5)) < 150:
+                self._super_shot(p)
+        elif pw == "magnet":
+            p.magnet_t = 3.0
+            b.mode = 0
+            self.last_touch = p.idx
+            self.events.append("magnet:%d" % p.idx)
+        elif pw == "glove":
+            self.shield[p.idx] = 4.5
+            self.glove[p.idx] = 4.5
+            self.events.append("glove:%d" % p.idx)
+        elif pw == "bolt":
+            fx = p.x
+            tx = clamp(b.x - p.dir * 48, 40, W - 40)
+            p.x = tx
+            if b.y > GROUND - 160:
+                p.y, p.vy, p.on_ground = GROUND, 0, True
+            p.speed_t = max(p.speed_t, 3.0)
+            self.events.append("bolt:%d:%d" % (p.idx, int(fx)))
+        elif pw == "quake":
+            self.events.append("quake:%d" % p.idx)
+            self.shake = 0.6
+            if o.y >= GROUND - 30 and o.frozen <= 0:
+                o.stun = 1.3
+                o.vy = -260
+                o.on_ground = False
+                o.vx = 320 * (1 if o.x > p.x else -1)
+            if b.y > GROUND - 220 and not b.mode:
+                b.vy = -760
+                b.vx *= 0.4
+                b.spin = 0
+
     def _swing(self, p, charge):
         p.kick_t = 0.24
         p.kick_hit = False
@@ -389,13 +426,15 @@ class World:
             p.meter = min(100.0, p.meter + METER_PER_SEC * dt) if self.phase == "play" else p.meter
             if p.charging:
                 p.charge = min(1.0, p.charge + dt / 0.75)
-            for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd"):
+            for attr in ("kick_t", "frozen", "stun", "speed_t", "jump_t", "armed", "touch_cd", "magnet_t"):
                 v = getattr(p, attr)
                 if v > 0:
                     setattr(p, attr, max(0.0, v - dt))
         for i in range(2):
             if self.shield[i] > 0:
                 self.shield[i] = max(0.0, self.shield[i] - dt)
+            if self.glove[i] > 0:
+                self.glove[i] = max(0.0, self.glove[i] - dt)
 
         self._step_players(dt)
         sub = 3
@@ -451,7 +490,17 @@ class World:
             b.ignore_t -= dt
         if b.squeeze_cd > 0:
             b.squeeze_cd -= dt
-        if b.mode:
+        mag = None
+        for q in self.players:
+            if q.magnet_t > 0 and not q.disabled:
+                mag = q
+        if mag is not None and not b.mode:
+            tx = mag.x + mag.dir * 34
+            ty = mag.y - 26 if mag.on_ground else mag.y - mag.h * 0.35
+            b.vx += ((tx - b.x) * 60 - b.vx) * min(1.0, dt * 14)
+            b.vy += ((ty - b.y) * 60 - b.vy) * min(1.0, dt * 14)
+            b.spin = 0
+        elif b.mode:
             b.mode_t -= dt
             if b.mode_t <= 0:
                 b.mode = 0
@@ -545,6 +594,10 @@ class World:
                     continue
             if b.mode and b.owner != p.idx:
                 continue
+            if mag is not None and mag is not p:
+                continue  # miknatis: rakip topa dokunamaz
+            if mag is p and not (p.kick_t > 0 and not p.kick_hit):
+                continue  # miknatisli oyuncu topu suruyor
             if b.ignore_t > 0 and b.ignore_p in (p.idx, -2):
                 continue  # sut/topuk sonrasi top vuranin govdesinden gecsin
             touched = False
@@ -558,8 +611,12 @@ class World:
             if p.kick_t > 0 and not p.kick_hit and not p.disabled:
                 fx, fy, fr = p.foot()
                 dist = math.hypot(b.x - fx, b.y - fy)
-                if dist < fr + BALL_R:
+                if dist < fr + BALL_R or mag is p:
                     p.kick_hit = True
+                    if mag is p:
+                        p.magnet_t = 0
+                        p.kick_power = max(p.kick_power, 1.4)
+                        dist = 0
                     self._kick(p, dist / (fr + BALL_R))
                     continue
                 # top arkada (kendi kale tarafimda) ve alcakta: topukla one asirt
@@ -687,6 +744,7 @@ class World:
             p.reset()
         self.ball.reset()
         self.shield = [0.0, 0.0]
+        self.glove = [0.0, 0.0]
         self.phase = "ready"
         self.phase_t = 1.4
         self.last_touch = -1
@@ -723,6 +781,8 @@ class World:
             "p": ps,
             "pu": None if self.pu is None else [self.pu[0], round(self.pu[1]), round(self.pu[2]), round(self.pu[3], 1)],
             "sh": [round(self.shield[0], 1), round(self.shield[1], 1)],
+            "gl": [round(self.glove[0], 1), round(self.glove[1], 1)],
+            "mg": [round(q.magnet_t, 2) for q in self.players],
             "scr": self.scorer, "ev": ev, "shk": round(shk, 2),
         }
 
@@ -780,5 +840,16 @@ class Bot:
             kick = random.random() < 0.25 + 0.2 * self.level
         if b.mode and b.owner != self.idx and abs(dx) < 120 and self.level >= 1:
             kick = random.random() < 0.3 * self.level
-        sup = p.meter >= 100 and dist < 140 and dx * d > 0
+        pw = p.stats["power"]
+        sup = False
+        if p.meter >= 100:
+            if pw in ("fire", "ice", "magnet"):
+                sup = dist < 140 and dx * d > 0
+            elif pw == "bolt":
+                sup = abs(dx) > 320 and (b.x - own_goal_x) * d > 200
+            elif pw == "glove":
+                sup = b.vx * d < -300 and abs(b.x - own_goal_x) < 520
+            elif pw == "quake":
+                o = w.players[1 - self.idx]
+                sup = abs(o.x - b.x) < 120 and abs(p.x - b.x) < 260
         return left, right, jump, kick, sup

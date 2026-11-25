@@ -71,6 +71,15 @@ KEYS_P2 = {
     "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_DOWN, pygame.K_KP1),
 }
 
+POWERS = {   # isim, renk, super bar rengi
+    "fire": ("ATEŞ ŞUTU", (255, 140, 40), "fire"),
+    "ice": ("BUZ ŞUTU", (110, 220, 255), "ice"),
+    "magnet": ("MIKNATIS", (200, 130, 255), "fire"),
+    "glove": ("DEV ELDİVEN", (255, 214, 60), "fire"),
+    "bolt": ("YILDIRIM", (255, 235, 90), "ice"),
+    "quake": ("DEPREM", (230, 150, 90), "fire"),
+}
+
 GOAL_LINES = {
     "super": ["SÜPER GÜÇ! DURDURULAMAZ!", "BU ŞUT DEĞİL, FÜZE!", "KALECİ ERİDİ GİTTİ!", "GÜÇ SENDE, GOL BİZDE!"],
     "head": ["KAFAYLA ÇAKTI!", "KAFA ÇALIŞIYOR MAŞALLAH!", "KAFA GOLÜ! NE YÜKSELDİ AMA!", "KAFANI KULLAN DEMİŞTİM!"],
@@ -645,6 +654,19 @@ class Assets:
         self.icon_fire = self._fit(L("ball_fire.png"), 30)
         self.seg_raw = {n: L(n + ".png") for n in ("seg_gold", "seg_orange", "seg_green", "seg_blue", "seg_empty",
                                                    "seg_gold_glow", "seg_green_glow")}
+        def picon(name, fallback, size):
+            if os.path.exists(res("assets", name)):
+                return self._fit(L(name), size)
+            return self._fit(L(fallback), size)
+        pmap = {"fire": ("ball_fire.png", "ball_fire.png"), "ice": ("ball_ice.png", "ball_ice.png"),
+                "magnet": ("pw_magnet.png", "orb_gold.png"), "glove": ("pw_glove.png", "pu_shield.png"),
+                "bolt": ("pw_bolt.png", "pu_speed.png"), "quake": ("pw_quake.png", "pu_jump.png")}
+        self.power_icon = {k: picon(a, b, 32) for k, (a, b) in pmap.items()}
+        self.power_icon_small = {k: picon(a, b, 28) for k, (a, b) in pmap.items()}
+        self.fx_art = {}
+        for n in ("fx_glove", "fx_bolt", "fx_quake", "fx_magnet", "fx_flash", "fx_dust", "fx_spark", "fx_stars"):
+            if os.path.exists(res("assets", n + ".png")):
+                self.fx_art[n] = L(n + ".png")
         self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
         # arayuz parcalari
         self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
@@ -744,6 +766,19 @@ class Assets:
             part(rw - c, c, c, rh - 2 * c, PW - oc, oc, oc, PH - 2 * oc)
             part(c, c, rw - 2 * c, rh - 2 * c, oc, oc, PW - 2 * oc, PH - 2 * oc)
             img = gfx.Img(out)
+            self._slices[key] = img
+        return img
+
+    def fx(self, name, h):
+        """Gemini efekt gorseli (yoksa None), h mantiksal yukseklik."""
+        raw = self.fx_art.get(name)
+        if raw is None:
+            return None
+        key = ("fx", name, int(h))
+        img = self._slices.get(key)
+        if img is None:
+            f = h / raw.get_height()
+            img = gfx.from_surface(raw, (raw.get_width() * f, h))
             self._slices[key] = img
         return img
 
@@ -1426,10 +1461,9 @@ class SelectScene(Scene, OnlineMixin):
                     on = k < val and prog * 10 > j * 2 + k
                     stat_seg(s, tx + 114 + k * 27, y, on, val >= 5, self.t + k * 0.15)
             pw = sim.CHARACTERS[c]["power"]
-            ic = A.icon_fire if pw == "fire" else A.icon_ice
+            ic = A.power_icon[pw]
             s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
-            draw_text(s, "ATEŞ ŞUTU" if pw == "fire" else "BUZ ŞUTU", 19, (tx + 30, r.y + 161),
-                      FIRE_C if pw == "fire" else ICE_C, anchor="midleft", outline=3)
+            draw_text(s, POWERS[pw][0], 19, (tx + 30, r.y + 161), POWERS[pw][1], anchor="midleft", outline=3)
             # durum etiketi
             if self.mode == "bot" and who == 1:
                 st, tcol = "ZORLUK: %s  (Z)" % LEVELS[self.level], (120, 70, 200)
@@ -1548,6 +1582,8 @@ class MatchScene(Scene, OnlineMixin):
         self.ripple = None
         self.goal_flash = 0.0
         self.goal_line = None
+        self.bolts = []
+        self.quakes = []
         self.last_count = None
         self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
         self.stad = app.stadium if 0 <= app.stadium < len(STADIUMS) else 0
@@ -1817,6 +1853,39 @@ class MatchScene(Scene, OnlineMixin):
                 self.flashes.append([bx, by, 0.12])
                 if bx < 330 or bx > W - 330:
                     crowd.kick(0.45)
+            elif name in ("magnet", "glove", "bolt", "quake"):
+                parts_ = ev.split(":")
+                who = int(parts_[1])
+                pp = snap["p"][who]
+                pcol = POWERS[name][1]
+                self.floaters.append([POWERS[name][0] + "!", pp[0], pp[1] - 210, 1.4, pcol])
+                self.crowd.kick(0.6)
+                if name == "magnet":
+                    snd.play("armed", 0)
+                    self._ring(bx, by, 90, pcol, 0.4)
+                    self._burst(bx, by, 20, [pcol, WHITE], 260, 0.5, 4, 0, "snow", 0)
+                elif name == "glove":
+                    snd.play("shield", 0)
+                    gx = sim.GOAL_D + 20 if who == 0 else W - sim.GOAL_D - 20
+                    self._burst(gx, sim.GROUND - 100, 30, [GOLD, WHITE], 320, 0.6, 5, 200, "spark", 0)
+                elif name == "bolt":
+                    snd.play("super_ice", 0)
+                    fx_from = int(parts_[2]) if len(parts_) > 2 else pp[0]
+                    self.bolts.append([fx_from, 0.35])
+                    self.bolts.append([pp[0], 0.45])
+                    self.flashes.append([pp[0], pp[1] - 80, 0.2])
+                    self._burst(pp[0], pp[1] - 70, 26, [(255, 240, 120), WHITE, (120, 200, 255)], 420, 0.4, 3, 0,
+                                "spark", 0)
+                    self.shake = max(self.shake, 0.2)
+                elif name == "quake":
+                    snd.play("fire_hit", 0)
+                    snd.play("land", 0)
+                    self.quakes.append([pp[0], 0.9])
+                    self._ring(pp[0], sim.GROUND, 160, (230, 170, 110), 0.5)
+                    for k in range(-5, 6):
+                        self._dust(pp[0] + k * 45, sim.GROUND, 3, 40)
+                    self._burst(pp[0], sim.GROUND - 5, 24, [(150, 110, 70), (110, 80, 50)], 380, 0.8, 6, 900,
+                                "shard", 0.6)
             elif name == "jump2":
                 who = int(ev.split(":")[1]) if ":" in ev else 0
                 pp = snap["p"][who]
@@ -1985,6 +2054,10 @@ class MatchScene(Scene, OnlineMixin):
             if self.ripple[2] > 1.4:
                 self.ripple = None
         self.goal_flash = max(0.0, self.goal_flash - dt)
+        for q in self.bolts + self.quakes:
+            q[1] -= dt
+        self.bolts = [q for q in self.bolts if q[1] > 0]
+        self.quakes = [q for q in self.quakes if q[1] > 0]
         if self.goal_line:
             self.goal_line[1] -= dt
             if self.goal_line[1] <= 0:
@@ -2081,14 +2154,42 @@ class MatchScene(Scene, OnlineMixin):
                     a = self.t * 2 + k * 2.09
                     sx, sy = px + math.cos(a) * 44, py + bob + math.sin(a) * 44
                     self._star(s, sx, sy, 4 + 2 * math.sin(self.t * 8 + k), (255, 250, 210))
+        for qx, life in self.quakes:
+            img = A.fx("fx_quake", 90)
+            if img is not None:
+                img.set_alpha(int(255 * min(1, life * 2.5)))
+                s.blit(img, img.get_rect(midbottom=(qx, sim.GROUND + 30)))
+                img.set_alpha(255)
+            else:
+                for k in range(-3, 4):
+                    gd.line(s, (60, 40, 25), (qx + k * 30, sim.GROUND), (qx + k * 38, sim.GROUND - 20 * life), 4)
         # arkadaki parcaciklar (duman)
         for p in self.parts:
             if p.kind == "smoke":
                 self._draw_particle(s, p)
         for i, p in enumerate(snap["p"]):
             self._draw_player(s, i, p, snap)
+        mg = snap.get("mg", [0, 0])
+        if max(mg) > 0:
+            fx.blit_glow(s, b[0], b[1], 60 + 6 * math.sin(self.t * 14), (70, 30, 110))
+            img = A.fx("fx_magnet", 92)
+            if img is not None:
+                rimg = tf.rotate(img, (self.t * 240) % 360)
+                s.blit(rimg, rimg.get_rect(center=(b[0], b[1])))
+            else:
+                gd.circle(s, (200, 130, 255), (b[0], b[1]), 36 + 4 * math.sin(self.t * 12), 3)
         self._draw_ball(s, b)
         self._draw_goal_front(s, snap)
+        for bx_, life in self.bolts:
+            img = A.fx("fx_bolt", sim.GROUND - 40)
+            if img is not None:
+                img.set_alpha(int(255 * min(1, life * 4)))
+                s.blit(img, img.get_rect(midbottom=(bx_, sim.GROUND)))
+                img.set_alpha(255)
+            else:
+                pts = [(bx_ + (14 if k % 2 else -14), 40 + k * (sim.GROUND - 40) / 8) for k in range(9)]
+                gd.lines(s, (255, 250, 200), False, pts, 6)
+            fx.blit_glow(s, bx_, sim.GROUND - 120, 110 * life + 40, (90, 90, 40))
         for p in self.parts:
             if p.kind != "smoke":
                 self._draw_particle(s, p)
@@ -2214,7 +2315,21 @@ class MatchScene(Scene, OnlineMixin):
                 img = A.goal_back_r
                 x = W - gx - img.get_width() + off
             s.blit(img, (x, gy))
+        gl = snap.get("gl", [0, 0])
         for i in range(2):
+            if gl[i] > 0:
+                x = sim.GOAL_D + 18 if i == 0 else W - sim.GOAL_D - 18
+                img = A.fx("fx_glove", (GR - GT) * 0.95)
+                blink = gl[i] > 1.2 or int(self.t * 10) % 2
+                if img is not None and blink:
+                    if i == 1:
+                        img = A.flipped(img)
+                    bob = math.sin(self.t * 4) * 4
+                    s.blit(img, img.get_rect(midbottom=(x, GR + bob)))
+                elif blink:
+                    gd.ellipse(s, (255, 214, 60), (x - 30, GT + 10, 60, GR - GT - 10))
+                    gd.ellipse(s, (12, 14, 34), (x - 30, GT + 10, 60, GR - GT - 10), 4)
+                continue
             if snap["sh"][i] > 0:
                 x = sim.GOAL_D + 2 if i == 0 else W - sim.GOAL_D - 2
                 wall = pygame.Surface((26, GR - GT), pygame.SRCALPHA)
@@ -2283,7 +2398,7 @@ class MatchScene(Scene, OnlineMixin):
             sx, sy = 1 - 0.08 * k, 1 + 0.1 * k
         if armed > 0:
             pw = sim.CHARACTERS[char]["power"]
-            c = (130, 60, 10) if pw == "fire" else (30, 90, 130)
+            c = _shade(POWERS[pw][1], 0.45)
             fx.blit_glow(s, x, y - h * 0.5, 95 + 8 * math.sin(self.t * 12), c)
         if sx != 1.0 or sy != 1.0:
             img = tf.smoothscale(img, (max(1, int(img.get_width() * sx)),
@@ -2425,22 +2540,22 @@ class MatchScene(Scene, OnlineMixin):
             # super bar
             meter_v, armed = p[6], p[7]
             pw = sim.CHARACTERS[char]["power"]
-            col = FIRE_C if pw == "fire" else ICE_C
+            col = POWERS[pw][1]
             bar = pygame.Rect(0, 0, 176, 20)
             if i == 0:
                 bar.topright = (px - 52, 50)
             else:
                 bar.topleft = (px + 52, 50)
             full = meter_v >= 100 or armed > 0
-            seg_meter(s, bar, meter_v / 100, pw, right=(i == 1), flash=full and int(self.t * 6) % 2 == 0)
-            ic = A.icon_fire if pw == "fire" else A.icon_ice
+            seg_meter(s, bar, meter_v / 100, POWERS[pw][2], right=(i == 1), flash=full and int(self.t * 6) % 2 == 0)
+            ic = A.power_icon_small[pw]
             s.blit(ic, ic.get_rect(center=(bar.left - 18 if i == 0 else bar.right + 18, bar.centery)))
             local = self.mode == "local2" or i == self.me
             if full and local:
-                if armed > 0:
+                if armed > 0 or snap.get("mg", [0, 0])[i] > 0:
                     t = "SÜPER AKTİF!"
                 else:
-                    t = "SÜPER HAZIR · %s" % ("S / ↓" if self.mode != "local2" else ("S" if i == 0 else "↓"))
+                    t = POWERS[pw][0] + " HAZIR · %s" % ("S / ↓" if self.mode != "local2" else ("S" if i == 0 else "↓"))
                 draw_text(s, t, 16, (bar.centerx, bar.bottom + 14), col, outline=3)
             # aktif guc ikonlari
             icons = []
