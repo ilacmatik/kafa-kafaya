@@ -30,6 +30,7 @@ import pygame  # noqa: E402
 import fx  # noqa: E402
 import gfx  # noqa: E402
 from gfx import draw as gd, transform as tf  # noqa: E402
+from sim import PEN_AIM_T, PEN_SHOT_T  # noqa: E402
 import net  # noqa: E402
 import sim  # noqa: E402
 
@@ -114,7 +115,11 @@ def mirror_snap(m):
     if "wd" in m:
         m["wd"] = -m["wd"]
     if m.get("pen"):
-        m["pen"] = [1 - m["pen"][0], m["pen"][1][::-1]]
+        pn = m["pen"]
+        shot = pn[3] if len(pn) > 3 else None
+        if shot:
+            shot = [-shot[0], shot[1], -shot[2], shot[3], shot[4]]
+        m["pen"] = [1 - pn[0], pn[1][::-1], (pn[2][::-1] if len(pn) > 2 else [0, 0]), shot]
     if m.get("st"):
         m["st"] = {k: _sw(v) for k, v in m["st"].items()}
     if "ag" in m and m["ag"]:
@@ -123,7 +128,8 @@ def mirror_snap(m):
     for ev in m.get("ev", []):
         parts = ev.split(":")
         n = parts[0]
-        if n in ("goal", "jump2", "shoulder", "bump", "bicycle", "pen_goal", "pen_miss", "magnet", "glove",
+        if n in ("goal", "jump2", "shoulder", "bump", "bicycle", "pen_goal", "pen_miss", "pen_save", "pen_lock",
+                 "magnet", "glove",
                  "quake", "bolt") and len(parts) > 1:
             parts[1] = str(1 - int(parts[1]))
             if n == "bolt" and len(parts) > 2:
@@ -814,6 +820,21 @@ class Assets:
             raw = L("pm_hero%d.png" % i)
             self.pm_heroes.append(gfx.from_surface(raw, (raw.get_width() * 340 / raw.get_height(), 340)))
         self.sel_bg = gfx.from_surface(pygame.image.load(res("assets", "sel_bg.jpg")).convert(), (W, H))
+        def opt(name, h):
+            if os.path.exists(res("assets", name)):
+                raw = L(name)
+                return gfx.from_surface(raw, (raw.get_width() * h / raw.get_height(), h))
+            return None
+        self.pen_bg = None
+        if os.path.exists(res("assets", "pen_bg.jpg")):
+            self.pen_bg = gfx.from_surface(pygame.image.load(res("assets", "pen_bg.jpg")).convert(), (W, H))
+        self.pen_back, self.pen_kickb, self.pen_dive, self.pen_jump = {}, {}, {}, {}
+        for i in range(6):
+            for dct, nm, hh in ((self.pen_back, "pen_back%d.png", 330), (self.pen_kickb, "pen_kick%d.png", 330),
+                                (self.pen_dive, "pen_dive%d.png", 170), (self.pen_jump, "pen_jump%d.png", 240)):
+                v = opt(nm % i, hh)
+                if v is not None:
+                    dct[i] = v
         self.sel_heroes = []
         for i in range(6):
             raw = L("sel_hero%d.png" % i)
@@ -2261,9 +2282,19 @@ class MatchScene(Scene, OnlineMixin):
                 self._say("PENALTILAR!", GOLD, 2.0)
                 snd.play("golden", 0)
                 self.crowd.kick(0.8)
-            elif name in ("pen_goal", "pen_miss"):
+            elif name == "pen_lock":
+                snd.play("click", 0)
+            elif name == "pen_kick":
+                snd.play("kick", 0)
+                self.crowd.kick(0.7)
+            elif name in ("pen_goal", "pen_miss", "pen_save"):
                 who = int(ev.split(":")[1])
-                if name == "pen_goal":
+                if name == "pen_save":
+                    snd.play("block", 0)
+                    snd.play("ooh", 0.2)
+                    self._say("KURTARDI!", (120, 220, 255), 1.4)
+                    self.crowd.kick(1.0, 1 - who)
+                elif name == "pen_goal":
                     snd.play("goal", 0)
                     self._say("GOL!", GOLD, 1.4)
                     self.crowd.kick(1.0, who)
@@ -2582,9 +2613,165 @@ class MatchScene(Scene, OnlineMixin):
                                            "snow"))
 
     # -------------------------------------------------- cizim
+    # ------------------------------------------------------------------ penalti gorunumu
+    PEN_GOAL = (330, 950, 250, 560)    # sol, sag, ust direk alti, zemin (penalti kamerasi)
+
+    def _pen_zone(self, col, row):
+        x0, x1, y0, y1 = self.PEN_GOAL
+        cx = (x0 + x1) / 2 + col * (x1 - x0) * 0.33
+        cy = y1 - 62 if row == 0 else y0 + 72
+        return cx, cy
+
+    def _my_aim(self):
+        keys = KEYS_SOLO
+        h = self._held(keys)
+        col = (1 if h["r"] else 0) - (1 if h["l"] else 0)
+        return col, 1 if h["j"] else 0
+
+    def _draw_pen_view(self, screen, snap):
+        A = self.app.assets
+        s = self.frame
+        pen = snap["pen"]
+        turn, res, ready, shot = pen[0], pen[1], pen[2], pen[3]
+        keeper = 1 - turn
+        ph = snap["ph"]
+        x0, x1, y0, y1 = self.PEN_GOAL
+        gw = x1 - x0
+        # arka plan
+        bg = A.pen_bg
+        if bg is not None:
+            s.blit(bg, (0, 0))
+        else:
+            s.blit(A.stadium_wx.get((self.stad, self.weather_now()), A.stadiums[self.stad]), (0, 0))
+            s.overlay((5, 10, 25, 120))
+            gd.rect(s, (40, 120, 50), (0, y1, W, H - y1))
+            for yy in range(y0, y1, 22):
+                gd.line(s, (200, 205, 215), (x0, yy), (x1, yy), 1)
+            for xx in range(int(x0), int(x1), 22):
+                gd.line(s, (200, 205, 215), (xx, y0), (xx, y1), 1)
+            gd.rect(s, (245, 245, 250), (x0 - 14, y0 - 14, gw + 28, 14))
+            gd.rect(s, (245, 245, 250), (x0 - 14, y0 - 14, 14, y1 - y0 + 14))
+            gd.rect(s, (245, 245, 250), (x1, y0 - 14, 14, y1 - y0 + 14))
+            gd.line(s, (245, 245, 250), (0, y1 + 2), (W, y1 + 2), 3)
+        t_shot = (PEN_SHOT_T - snap["pt"]) if ph == "pen_shot" else (PEN_SHOT_T if ph == "pen_res" else 0.0)
+        kchar = snap["p"][keeper][9]
+        schar = snap["p"][turn][9]
+        # kaleci
+        kimg = A.sel_heroes[kchar]
+        kx, ky, ang = W / 2, y1 + 6, 0.0
+        if shot is not None:
+            scol, srow, kcol, krow, out = shot
+            e = min(1.0, max(0.0, (t_shot - 0.18) / 0.32))
+            e = 1 - (1 - e) ** 2
+            dive = A.pen_dive.get(kchar)
+            if kcol != 0:
+                kx += kcol * gw * 0.30 * e
+                ky -= (120 if krow == 1 else 30) * e
+                if dive is not None and e > 0.2:
+                    kimg = dive if kcol < 0 else A.flipped(dive)
+                else:
+                    ang = -kcol * 75 * e
+            else:
+                ky -= (95 if krow == 1 else 0) * e
+                jump = A.pen_jump.get(kchar)
+                if krow == 1 and jump is not None and e > 0.2:
+                    kimg = jump
+        else:
+            kx += math.sin(self.t * 3.2) * 18
+        if ang:
+            kimg = tf.rotate(kimg, ang)
+        sh_ = A.shadow(46)
+        s.blit(sh_, sh_.get_rect(center=(kx, y1 + 8)))
+        s.blit(kimg, kimg.get_rect(midbottom=(kx, ky)) if not ang else kimg.get_rect(center=(kx, ky - 110)))
+        # top
+        bx0, by0 = W / 2 + 30, 676
+        bx, by, bs = bx0, by0, 1.0
+        if shot is not None:
+            scol, srow, kcol, krow, out = shot
+            tx, ty = self._pen_zone(scol, srow)
+            if out == 2:
+                tx, ty = tx + scol * 120, y0 - 70
+            k = min(1.0, t_shot / 0.42)
+            bx = bx0 + (tx - bx0) * k
+            by = by0 + (ty - by0) * k - math.sin(k * math.pi) * 60
+            bs = 1.0 - 0.5 * k
+            if out == 1 and t_shot > 0.42:
+                k2 = min(1.0, (t_shot - 0.42) / 0.6)
+                bx += -scol * 140 * k2 if scol else 160 * k2
+                by += -80 * math.sin(k2 * math.pi) + 220 * k2 * k2
+                bs = 0.5 + 0.15 * k2
+            elif out == 0 and t_shot > 0.42:
+                by = ty + 10 * math.sin((t_shot - 0.42) * 12) * math.exp(-(t_shot - 0.42) * 4)
+        ball = tf.rotozoom(A.ball, -t_shot * 900 % 360, 1.6 * bs)
+        s.blit(ball, ball.get_rect(center=(bx, by)))
+        # atici (arkadan)
+        back = A.pen_back.get(schar)
+        kick_pose = A.pen_kickb.get(schar)
+        img = kick_pose if (kick_pose is not None and ph in ("pen_shot",) and t_shot < 0.5) else back
+        if img is not None:
+            s.blit(img, img.get_rect(midbottom=(W / 2 - 70, H + 30)))
+        else:
+            im = A.flipped(A.sel_heroes[schar])
+            im = tf.rotozoom(im, 0, 1.25)
+            s.blit(im, im.get_rect(midbottom=(W / 2 - 110, H + 70)))
+        # yon secimi (sadece kendi secimin, rakibinki asla)
+        local2 = self.mode == "local2"
+        me = self.me
+        if ph == "pen_aim":
+            role = "ATICI" if me == turn else "KALECİ"
+            if not local2 and ready[me] == 0:
+                col, row = self._my_aim()
+                for c_ in (-1, 0, 1):
+                    for r_ in (0, 1):
+                        zx, zy = self._pen_zone(c_, r_)
+                        on = (c_, r_) == (col, row)
+                        rr = 30 if on else 16
+                        gd.circle(s, (12, 14, 34), (zx, zy), rr + 3)
+                        gd.circle(s, (255, 214, 60) if on else (120, 160, 220), (zx, zy), rr, 0 if on else 3)
+                if me == turn:
+                    tip = "ATIYORSUN  ·  ←/→ ve ↑ ile yön seç, ŞUT ile vur"
+                else:
+                    tip = "KALECİSİN  ·  ←/→ ve ↑ ile atlayacağın yeri seç, ŞUT ile kilitle"
+            elif not local2:
+                tip = "SEÇİMİN KİLİTLENDİ  ·  rakip bekleniyor..."
+            else:
+                tip = "İkiniz de yönünüzü gizlice seçin ve ŞUT'a basın (ok + yukarı = üst köşe)"
+            # zaman cubugu
+            frac = max(0.0, snap["pt"] / PEN_AIM_T)
+            bar = pygame.Rect(0, 0, 420, 18)
+            bar.center = (W // 2, 214)
+            draw_meter(s, bar, frac, (255, 200, 60) if frac > 0.3 else (255, 90, 60))
+            draw_text(s, tip, 20, (W // 2, 182), WHITE, outline=3)
+            for who in (0, 1):
+                if local2:
+                    nm = "%d. OYUNCU" % (who + 1)
+                else:
+                    nm = "SEN" if who == me else "RAKİP"
+                st = "HAZIR ✓" if ready[who] else "seçiyor..."
+                tag = pygame.Rect(0, 0, 220, 30)
+                tag.center = (170 if who == 0 else W - 170, 214)
+                pill(s, tag, (40, 160, 70) if ready[who] else _shade(P_COLORS[who], 0.8), radius=12)
+                draw_text(s, "%s · %s" % (nm, st), 15, (tag.centerx, tag.centery - 1), WHITE, outline=2)
+        self._draw_hud(s, snap)
+        self._draw_pens(s, snap)
+        ox = oy = 0
+        if self.shake > 0:
+            m_ = 10 * min(1, self.shake * 2.5)
+            ox, oy = random.uniform(-m_, m_), random.uniform(-m_, m_)
+        screen.fill((0, 0, 0))
+        screen.blit(s, (ox, oy))
+        for txt, x, y, life, col in self.floaters:
+            draw_text(screen, txt, 30, (x, y), col, outline=4, alpha=int(255 * min(1, life * 2)))
+        if self.banner:
+            txt, col, t, mx = self.banner
+            draw_text(screen, txt, 84, (W // 2, 330), col, outline=7, alpha=int(255 * min(1, t * 3)))
+
     def draw(self, screen):
         A = self.app.assets
         s = self.frame
+        if self.snap and self.snap.get("pen") and self.snap["ph"] in ("pen_ready", "pen_aim", "pen_shot", "pen_res"):
+            self._draw_pen_view(screen, self.snap)
+            return
         wxn = self.weather_now()
         bgk = (self.stad, wxn)
         s.blit(A.stadium_wx.get(bgk, A.stadiums[self.stad]), (0, 0))
@@ -3234,7 +3421,7 @@ class MatchScene(Scene, OnlineMixin):
         pen = snap.get("pen")
         if not pen:
             return
-        turn, res_ = pen
+        turn, res_ = pen[0], pen[1]
         box = pygame.Rect(0, 0, 360, 74)
         box.midtop = (W // 2, 96)
         frame(s, box)
@@ -3261,9 +3448,7 @@ class MatchScene(Scene, OnlineMixin):
             else:
                 who = "SEN" if turn == self.me else "RAKİP"
             draw_text(s, "%s ATIYOR · %s" % (who, sim.DISPLAY_NAMES[shooter]), 26, (W // 2, 290), WHITE, outline=4)
-            tip = "Şut: yerden  ·  Şut + AŞAĞI: üst köşe" if (self.mode == "local2" or turn == self.me) \
-                else "Kaleci: ZIPLA (üst köşe) ya da BEKLE (yerden)"
-            draw_text(s, tip, 18, (W // 2, 324), (200, 225, 255), outline=2, title=False)
+            pass
 
     def _draw_overlays(self, s, snap):
         self._draw_pens(s, snap)

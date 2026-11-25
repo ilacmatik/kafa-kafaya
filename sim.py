@@ -25,6 +25,9 @@ METER_PER_TOUCH = 3.0
 
 BACK_SPEED = 1.28       # geri kosu hiz carpani
 
+PEN_AIM_T = 5.0
+PEN_SHOT_T = 1.5
+
 PU_KINDS = ["speed", "jump", "shield", "freeze", "gold"]
 
 # isim, hiz, ziplama, sut gucu, boy carpani, kafa carpani, super tipi
@@ -170,7 +173,14 @@ class World:
         p = self.players[i]
         jump_edge = jump and not p.jump_prev
         p.jump_prev = jump
-        if self.phase in ("ready", "over", "pen_ready", "pen_res"):
+        if self.phase == "pen_aim":
+            if kick_pressed and self.pen["c"][i] is None:
+                col = (1 if right else 0) - (1 if left else 0)
+                self.pen["c"][i] = (col, 1 if jump else 0)
+                self.events.append("pen_lock:%d" % i)
+            p.vx = 0
+            return
+        if self.phase in ("ready", "over", "pen_ready", "pen_res", "pen_shot"):
             p.vx = 0
             p.charging = False
             return
@@ -473,19 +483,26 @@ class World:
         if self.phase == "pen_ready":
             self.phase_t -= dt
             if self.phase_t <= 0:
-                self.phase = "pen"
-                self.pen["t"] = 0.0
+                self.phase = "pen_aim"
+                self.phase_t = PEN_AIM_T
                 self.events.append("whistle")
             return
-        if self.phase == "pen":
-            self.pen["t"] += dt
-            if self.pen["t"] > 5.0:
-                self._pen_result(False)
+        if self.phase == "pen_aim":
+            self.phase_t -= dt
+            c = self.pen["c"]
+            if (c[0] is not None and c[1] is not None) or self.phase_t <= 0:
+                self._pen_shoot()
+            return
+        if self.phase == "pen_shot":
+            self.phase_t -= dt
+            if self.phase_t <= 0:
+                self._pen_result(self.pen["shot"][4])
+            return
         if self.phase == "pen_res":
             self.phase_t -= dt
             if self.phase_t <= 0:
                 self._pen_next()
-                return
+            return
         if self.phase == "play":
             if self.last_touch >= 0:
                 self.stats["poss"][self.last_touch] += dt
@@ -891,7 +908,7 @@ class World:
 
     # ------------------------------------------------------------ penaltilar
     def _start_pens(self):
-        self.pen = {"turn": 0, "res": [[], []], "t": 0.0}
+        self.pen = {"turn": 0, "res": [[], []], "t": 0.0, "c": [None, None], "shot": None}
         self.pu = None
         self.events.append("pens")
         self._pen_setup()
@@ -913,17 +930,46 @@ class World:
         keeper.x = W - GOAL_D - 40 if sh == 0 else GOAL_D + 40
         keeper.h = keeper.h0 * 0.7   # kaleci comelmis bekler
         self.last_touch = -1
+        self.pen["c"] = [None, None]
+        self.pen["shot"] = None
         self.phase = "pen_ready"
         self.phase_t = 1.5
 
-    def _pen_result(self, goal):
+    def _pen_shoot(self):
         sh = self.pen["turn"]
+        kp = 1 - sh
+        c = self.pen["c"]
+        if c[sh] is None:
+            c[sh] = (random.choice((-1, 0, 1)), random.choice((0, 1)))
+        if c[kp] is None:
+            c[kp] = (0, 0)   # kaleci secmezse ortada kalir
+        scol, srow = c[sh]
+        kcol, krow = c[kp]
+        if srow == 1 and scol != 0 and random.random() < 0.12:
+            out = 2                               # ust koseden aut
+        elif scol == kcol and (srow == krow or scol == 0):
+            out = 1                               # kurtaris
+        else:
+            out = 0                               # gol
+        self.pen["shot"] = [scol, srow, kcol, krow, out]
+        self.stats["shots"][sh] += 1
+        if out == 1:
+            self.stats["saves"][kp] += 1
+        self.phase = "pen_shot"
+        self.phase_t = PEN_SHOT_T
+        self.events.append("pen_kick")
+
+    def _pen_result(self, out):
+        sh = self.pen["turn"]
+        goal = out == 0
         self.pen["res"][sh].append(1 if goal else 0)
         self.phase = "pen_res"
-        self.phase_t = 1.6
+        self.phase_t = 1.4
         if goal:
             self.scorer = sh
             self.events.append("pen_goal:%d" % sh)
+        elif out == 1:
+            self.events.append("pen_save:%d" % sh)
         else:
             self.events.append("pen_miss:%d" % sh)
 
@@ -996,7 +1042,10 @@ class World:
             "mg": [round(q.magnet_t, 2) for q in self.players],
             "scr": self.scorer, "ev": ev, "shk": round(shk, 2),
             "wx": self.weather, "wd": round(self.wind),
-            "pen": None if self.pen is None else [self.pen["turn"], self.pen["res"]],
+            "pen": None if self.pen is None else [
+                self.pen["turn"], self.pen["res"],
+                [1 if self.pen["c"][0] is not None else 0, 1 if self.pen["c"][1] is not None else 0],
+                self.pen["shot"] if self.phase in ("pen_shot", "pen_res") else None],
             "st": self.stats if self.phase == "over" else None,
         }
 
@@ -1017,6 +1066,15 @@ class Bot:
     def think(self, w, dt):
         p = w.players[self.idx]
         b = w.ball
+        if w.phase == "pen_aim":
+            key = (len(w.pen["res"][0]), len(w.pen["res"][1]))
+            if getattr(self, "pen_key", None) != key:
+                self.pen_key = key
+                self.pen_c = (random.choice((-1, 0, 1)), random.choice((0, 1)))
+                self.pen_delay = random.uniform(0.6, 2.5)
+            col, row = self.pen_c
+            go = (PEN_AIM_T - w.phase_t) > self.pen_delay
+            return col < 0, col > 0, row == 1, go, False
         if w.phase in ("pen", "pen_ready", "pen_res") and w.pen and w.pen["turn"] != self.idx:
             # penaltida kaleci
             gx = GOAL_D + 45 if self.idx == 0 else W - GOAL_D - 45
