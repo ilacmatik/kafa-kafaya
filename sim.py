@@ -23,6 +23,8 @@ SUPER_TIME = 1.0
 METER_PER_SEC = 3.0
 METER_PER_TOUCH = 3.0
 
+BACK_SPEED = 1.28       # geri kosu hiz carpani
+
 PU_KINDS = ["speed", "jump", "shield", "freeze", "gold"]
 
 # isim, hiz, ziplama, sut gucu, boy carpani, kafa carpani, super tipi
@@ -152,9 +154,13 @@ class World:
             return
         spd = p.stats["speed"] * (1.45 if p.speed_t > 0 else 1.0)
         move = (1 if right else 0) - (1 if left else 0)
+        back = move != 0 and move != p.dir
+        if back:
+            spd *= BACK_SPEED   # savunmaya donerken daha hizli
         target = move * spd
-        # hafif ivmelenme
-        p.vx += (target - p.vx) * (0.35 if p.on_ground else 0.18)
+        # hafif ivmelenme (geri donuste daha cevik)
+        acc = (0.45 if back else 0.35) if p.on_ground else (0.26 if back else 0.18)
+        p.vx += (target - p.vx) * acc
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         if jump and p.on_ground:
