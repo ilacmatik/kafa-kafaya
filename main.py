@@ -2640,25 +2640,22 @@ class MatchScene(Scene, OnlineMixin):
         if wx == "rain":
             if not themed:
                 s.overlay((10, 20, 40, 70))
-            drop = A.fx("wx_drop", 9)
             wd = snap.get("wd", 0) * 0.02
-            for x, y, k in self.rain:
-                gd.line(s, (170, 200, 240), (x, y - 14 * k), (x - 3 - wd, y + 4), 1)
-                if drop is not None and int(x) % 3 == 0:
-                    s.blit(drop, (x - 3, y))
-                if y > sim.GROUND - 22 and int(x * 7) % 3 == 0:
-                    sp = A.fx("wx_splash", 14)
+            for x, y, k in self.rain[:55]:
+                gd.line(s, (150, 175, 210), (x, y - 10 * k), (x - 2 - wd, y), 1)
+                if y > sim.GROUND - 16 and int(x * 7) % 4 == 0:
+                    sp = A.fx("wx_splash", 9)
                     if sp is not None:
                         s.blit(sp, sp.get_rect(midbottom=(x, sim.GROUND + 3)))
         elif wx == "snow":
             if not themed:
                 s.overlay((200, 215, 240, 26))
-            flake = A.fx("wx_flake", 12)
-            for x, y, k in self.rain:
-                if flake is not None:
+            flake = A.fx("wx_flake", 7)
+            for n, (x, y, k) in enumerate(self.rain[:60]):
+                if flake is not None and n % 4 == 0:
                     s.blit(flake, (x, y))
                 else:
-                    gd.circle(s, (250, 252, 255), (x, y), 2 + k)
+                    gd.circle(s, (235, 240, 250), (x, y), 1 + 0.6 * k)
             gd.rect(s, (235, 242, 252), (0, sim.GROUND + 2, W, 6))
             pile = A.fx("wx_snowpile", 26)
             if pile is not None:
