@@ -88,44 +88,72 @@ _fonts = {}
 _tcache = {}
 
 
+FONT_FILES = {True: "FiraSans-BlackItalic.ttf", False: "FiraSans-Black.ttf"}
+GRADS = {
+    (255, 205, 60): ((255, 242, 160), (255, 168, 24)),     # altin
+    (255, 255, 255): ((255, 255, 255), (198, 214, 245)),   # beyaz
+    (255, 140, 40): ((255, 226, 120), (255, 96, 20)),      # ates
+    (110, 220, 255): ((225, 250, 255), (70, 180, 255)),    # buz
+}
+
+
 def get_font(size, title=False):
     key = (size, title)
     f = _fonts.get(key)
     if f is None:
-        names = "arialblack,segoeuiblack,impact,arial" if title else "segoeuisemibold,segoeui,arial,tahoma"
         try:
-            f = pygame.font.SysFont(names, size, bold=not title)
+            f = pygame.font.Font(res("assets", "fonts", FONT_FILES[title]), size)
         except Exception:
-            f = pygame.font.Font(None, size)
+            names = "arialblack,segoeuiblack,impact,arial" if title else "segoeuisemibold,segoeui,arial,tahoma"
+            try:
+                f = pygame.font.SysFont(names, size, bold=not title)
+            except Exception:
+                f = pygame.font.Font(None, size)
         _fonts[key] = f
     return f
 
 
-def text_surf(txt, size, color=WHITE, outline=3, ocolor=(15, 18, 30), title=True):
-    """Yaziyi ekran cozunurlugunde (K kat) cizer, gfx.Img dondurur."""
-    key = (txt, size, color, outline, ocolor, title)
+_OUT_DIRS = [(math.cos(a * math.pi / 8), math.sin(a * math.pi / 8)) for a in range(16)]
+
+
+def text_surf(txt, size, color=WHITE, outline=3, ocolor=(12, 14, 34), title=True, shadow=None):
+    """Oyun yazisi: (istege bagli) gradyan dolgu, kalin yuvarlak kontur ve alt golge. gfx.Img dondurur."""
+    key = (txt, size, color, outline, ocolor, title, shadow)
     s = _tcache.get(key)
     if s is not None:
         return s
     k = gfx.K
     f = get_font(max(6, int(round(size * k))), title)
-    base = f.render(txt, True, color)
-    o_px = int(round(outline * k))
-    if outline:
-        o = f.render(txt, True, ocolor)
-        surf = pygame.Surface((base.get_width() + o_px * 2, base.get_height() + o_px * 2), pygame.SRCALPHA)
-        steps = max(1, o_px)
-        dirs = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
-        for dx, dy in dirs:
-            surf.blit(o, (o_px + dx * steps, o_px + dy * steps))
-        if o_px >= 3:
-            for dx, dy in dirs:
-                surf.blit(o, (o_px + dx * steps // 2, o_px + dy * steps // 2))
-        surf.blit(base, (o_px, o_px))
+    mask = f.render(txt, True, (255, 255, 255))
+    w, h = mask.get_size()
+    o = int(round(outline * k))
+    if shadow is None:
+        shadow = outline > 0
+    sh = int(round(max(2, outline * 0.9) * k)) if shadow else 0
+    surf = pygame.Surface((w + 2 * o + 2, h + 2 * o + sh + 2), pygame.SRCALPHA)
+    if o:
+        om = f.render(txt, True, ocolor)
+        rings = [(dx * o, dy * o) for dx, dy in _OUT_DIRS] + [(dx * o * 0.5, dy * o * 0.5) for dx, dy in _OUT_DIRS[::2]]
+        if sh:
+            shm = om.copy()
+            shm.set_alpha(150)
+            for dx, dy in rings:
+                surf.blit(shm, (o + 1 + dx, o + 1 + dy + sh))
+        for dx, dy in rings:
+            surf.blit(om, (o + 1 + dx, o + 1 + dy))
+    grad = GRADS.get(tuple(color)) if title or size >= 26 else None
+    if grad:
+        g = pygame.Surface((w, h), pygame.SRCALPHA)
+        top, bot = grad
+        for y in range(h):
+            t = y / max(1, h - 1)
+            g.fill(tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)) + (255,), (0, y, w, 1))
+        g.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surf.blit(g, (o + 1, o + 1))
     else:
-        surf = base
+        surf.blit(f.render(txt, True, color), (o + 1, o + 1))
     s = gfx.Img(surf)
-    if len(_tcache) > 500:
+    if len(_tcache) > 600:
         _tcache.clear()
     _tcache[key] = s
     return s
@@ -140,6 +168,63 @@ def draw_text(surf, txt, size, pos, color=WHITE, anchor="center", outline=3, tit
     setattr(r, anchor, (int(pos[0]), int(pos[1])))
     surf.blit(s, r)
     return r
+
+
+_pills = {}
+
+
+def _shade(c, f):
+    return tuple(max(0, min(255, int(v * f))) for v in c[:3])
+
+
+def pill(surf, rect, color, border=(12, 14, 34), radius=None, gloss=True):
+    """Parlak, gradyanli, koyu kenarli yuvarlak etiket."""
+    r = pygame.Rect(rect)
+    key = (r.w, r.h, tuple(color), border, radius, gloss)
+    img = _pills.get(key)
+    if img is None:
+        k = gfx.K
+        PW, PH = max(4, int(r.w * k)), max(4, int(r.h * k))
+        rad = int((radius if radius is not None else r.h / 2) * k)
+        bw = max(2, int(3 * k))
+        out = pygame.Surface((PW, PH), pygame.SRCALPHA)
+        pygame.draw.rect(out, border, out.get_rect(), 0, border_radius=rad)
+        inner = pygame.Rect(bw, bw, PW - 2 * bw, PH - 2 * bw)
+        g = pygame.Surface(inner.size, pygame.SRCALPHA)
+        top, bot = _shade(color, 1.28), _shade(color, 0.78)
+        for y in range(inner.h):
+            t = y / max(1, inner.h - 1)
+            g.fill(tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)) + (255,), (0, y, inner.w, 1))
+        m_ = pygame.Surface(inner.size, pygame.SRCALPHA)
+        pygame.draw.rect(m_, (255, 255, 255, 255), m_.get_rect(), 0, border_radius=max(0, rad - bw))
+        g.blit(m_, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        out.blit(g, inner.topleft)
+        if gloss and inner.h > 8:
+            hl = pygame.Surface((inner.w - 2 * bw, max(2, inner.h // 2 - bw)), pygame.SRCALPHA)
+            pygame.draw.rect(hl, (255, 255, 255, 70), hl.get_rect(), 0, border_radius=max(0, rad - 2 * bw))
+            out.blit(hl, (inner.x + bw, inner.y + max(1, bw // 2)))
+        img = gfx.Img(out)
+        if len(_pills) > 300:
+            _pills.clear()
+        _pills[key] = img
+    surf.blit(img, r.topleft)
+
+
+def meter(surf, rect, frac, color, right=False, glow=False):
+    """Yuvarlak dolum cubugu."""
+    r = pygame.Rect(rect)
+    pill(surf, r, (22, 28, 52), gloss=False)
+    fw = int((r.w - 6) * max(0.0, min(1.0, frac)))
+    if fw >= r.h - 6:
+        fr = pygame.Rect(0, 0, fw, r.h - 6)
+        fr.centery = r.centery
+        if right:
+            fr.right = r.right - 3
+        else:
+            fr.left = r.left + 3
+        pill(surf, fr, color, border=_shade(color, 0.45))
+    if glow:
+        fx.blit_glow(surf, r.centerx, r.centery, r.w * 0.55, _shade(color, 0.35))
 
 
 def panel(surf, rect, color=(15, 20, 40, 200), radius=16, border=None, bw=3):
@@ -1195,30 +1280,34 @@ class SelectScene(Scene, OnlineMixin):
             s.blit(por, por.get_rect(center=(pc[0], pc[1] + 4)))
             gd.circle(s, GOLD, pc, 58, 3)
             tx = r.x + 150 if who == 0 else r.x + 26
-            draw_text(s, sim.DISPLAY_NAMES[c], 32, (tx, r.y + 42), WHITE, anchor="midleft", outline=3)
+            draw_text(s, sim.DISPLAY_NAMES[c], 34, (tx - 2, r.y + 44), WHITE, anchor="midleft", outline=4)
             for j, (lab, val) in enumerate(zip(("HIZ", "ZIPLAMA", "ŞUT"), sim.STAT_BARS[c])):
-                y = r.y + 82 + j * 24
-                draw_text(s, lab, 15, (tx, y), (200, 215, 240), anchor="midleft", outline=2, title=False)
+                y = r.y + 86 + j * 24
+                draw_text(s, lab, 14, (tx, y), (190, 205, 235), anchor="midleft", outline=2, title=False)
                 for k in range(5):
-                    col = GOLD if k < val else (45, 55, 90)
-                    gd.rect(s, col, (tx + 92 + k * 28, y - 7, 24, 14), 0, border_radius=4)
+                    seg = pygame.Rect(tx + 88 + k * 30, y - 8, 27, 16)
+                    if k < val:
+                        pill(s, seg, (255, 196, 40), border=(70, 40, 5), radius=5)
+                    else:
+                        pill(s, seg, (40, 50, 86), border=(14, 18, 36), radius=5, gloss=False)
             pw = sim.CHARACTERS[c]["power"]
             ic = A.icon_fire if pw == "fire" else A.icon_ice
-            s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 160)))
-            draw_text(s, "ATEŞ ŞUTU" if pw == "fire" else "BUZ ŞUTU", 18, (tx + 32, r.y + 160),
-                      FIRE_C if pw == "fire" else ICE_C, anchor="midleft", outline=2)
+            s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
+            draw_text(s, "ATEŞ ŞUTU" if pw == "fire" else "BUZ ŞUTU", 19, (tx + 30, r.y + 161),
+                      FIRE_C if pw == "fire" else ICE_C, anchor="midleft", outline=3)
             # durum etiketi
             if self.mode == "bot" and who == 1:
-                st, sc = "ZORLUK: %s (Z)" % LEVELS[self.level], (255, 200, 120)
+                st, tcol = "ZORLUK: %s  (Z)" % LEVELS[self.level], (120, 70, 200)
             elif self.ready[who]:
-                st, sc = "HAZIR!", (120, 255, 140)
+                st, tcol = "HAZIR", (40, 170, 70)
             else:
-                st, sc = "seçiyor...", (220, 225, 240)
-            tag = pygame.Rect(0, 0, 250, 36)
-            tag.center = (r.centerx, r.bottom)
-            gd.rect(s, (10, 14, 30), tag.inflate(6, 6), 0, border_radius=12)
-            gd.rect(s, P_COLORS[who], tag, 0, border_radius=10)
-            draw_text(s, "%s · %s" % (labels[who], st), 17, tag.center, sc if st == "HAZIR!" else WHITE, outline=2)
+                dots = "." * (int(self.t * 2) % 4)
+                st, tcol = "SEÇİYOR" + dots, _shade(P_COLORS[who], 0.85)
+            tag = pygame.Rect(0, 0, 270, 38)
+            tag.center = (r.centerx, r.bottom + 2)
+            pill(s, tag, tcol)
+            lab = labels[who]
+            draw_text(s, "%s  ·  %s" % (lab, st), 17, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         # VS ve ayarlar
         vs_bob = math.sin(self.t * 3) * 4
         fx.blit_glow(s, W // 2, 160, 90, (70, 50, 10))
@@ -1241,18 +1330,19 @@ class SelectScene(Scene, OnlineMixin):
                 img.set_alpha(185)
             s.blit(img, img.get_rect(midbottom=(cx, 548 - bob)))
             img.set_alpha(255)
-            draw_text(s, sim.DISPLAY_NAMES[i], 19, (cx, 588), GOLD if (sel0 or sel1) else (210, 215, 230), outline=3)
+            draw_text(s, sim.DISPLAY_NAMES[i], 21, (cx, 590), GOLD if (sel0 or sel1) else WHITE, outline=3)
             # secim oklari
             tags = [(0, labels[0])] if sel0 else []
             if sel1:
                 tags.append((1, labels[1]))
             for n, (who, lab) in enumerate(tags):
-                ty = 312 - n * 34 + math.sin(self.t * 5) * 3
-                tag = pygame.Rect(0, 0, 118, 28)
+                ty = 314 - n * 34 + math.sin(self.t * 5) * 3
+                tag = pygame.Rect(0, 0, 124, 28)
                 tag.center = (cx, ty)
-                gd.rect(s, P_COLORS[who], tag, 0, border_radius=10)
-                gd.polygon(s, P_COLORS[who], [(cx - 8, tag.bottom), (cx + 8, tag.bottom), (cx, tag.bottom + 9)])
-                draw_text(s, lab, 15, tag.center, outline=2)
+                gd.polygon(s, (12, 14, 34), [(cx - 10, tag.bottom - 2), (cx + 10, tag.bottom - 2), (cx, tag.bottom + 11)])
+                gd.polygon(s, P_COLORS[who], [(cx - 7, tag.bottom - 2), (cx + 7, tag.bottom - 2), (cx, tag.bottom + 7)])
+                pill(s, tag, P_COLORS[who], radius=11)
+                draw_text(s, lab, 15, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         if self.mode == "local2":
             hint = "1. oyuncu: A/D seç, BOŞLUK hazır    ·    2. oyuncu: ←/→ seç, ENTER hazır"
         elif self.mode == "bot":
@@ -2054,8 +2144,12 @@ class MatchScene(Scene, OnlineMixin):
             label = "SEN"
         if label:
             ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
-            gd.polygon(s, P_COLORS[i], [(x - 9, ty + 10), (x + 9, ty + 10), (x, ty + 20)])
-            draw_text(s, label, 18, (x, ty), P_COLORS[i], outline=3)
+            tg = pygame.Rect(0, 0, 52 if len(label) <= 3 else 64, 22)
+            tg.center = (x, ty)
+            gd.polygon(s, (12, 14, 34), [(x - 9, tg.bottom - 2), (x + 9, tg.bottom - 2), (x, tg.bottom + 9)])
+            gd.polygon(s, P_COLORS[i], [(x - 6, tg.bottom - 2), (x + 6, tg.bottom - 2), (x, tg.bottom + 6)])
+            pill(s, tg, P_COLORS[i], radius=9)
+            draw_text(s, label, 13, (x, ty - 1), WHITE, outline=2, title=False)
 
     def _draw_ball(self, s, b):
         A = self.app.assets
@@ -2094,13 +2188,12 @@ class MatchScene(Scene, OnlineMixin):
         else:
             sec = max(0, int(math.ceil(tm)))
             tt, tc = "%d:%02d" % (sec // 60, sec % 60), (255, 90, 80) if sec <= 10 else WHITE
-        timer = pygame.Rect(0, 0, 120 if not snap["gg"] else 150, 44)
+        timer = pygame.Rect(0, 0, 124 if not snap["gg"] else 160, 46)
         timer.center = (cx, board.centery)
-        gd.rect(s, (40, 46, 70), timer, 0, border_radius=12)
-        gd.rect(s, (90, 100, 140), timer, 2, border_radius=12)
-        draw_text(s, tt, 28 if not snap["gg"] else 22, timer.center, tc, outline=2)
-        draw_text(s, str(sc[0]), 50, (cx - 112, board.centery), WHITE, outline=4)
-        draw_text(s, str(sc[1]), 50, (cx + 112, board.centery), WHITE, outline=4)
+        pill(s, timer, (36, 52, 110), radius=14)
+        draw_text(s, tt, 28 if not snap["gg"] else 22, (timer.centerx, timer.centery - 1), tc, outline=2)
+        draw_text(s, str(sc[0]), 54, (cx - 118, board.centery - 2), WHITE, outline=4)
+        draw_text(s, str(sc[1]), 54, (cx + 118, board.centery - 2), WHITE, outline=4)
         for i in (0, 1):
             p = snap["p"][i]
             char = p[9]
@@ -2108,12 +2201,13 @@ class MatchScene(Scene, OnlineMixin):
             if i == 1:
                 por = A.flipped(por)
             px = board.left - 50 if i == 0 else board.right + 50
-            circ = pygame.Rect(0, 0, 76, 76)
-            circ.center = (px, board.centery)
-            gd.circle(s, P_COLORS[i], circ.center, 40)
-            gd.circle(s, (12, 16, 34), circ.center, 35)
-            s.blit(por, por.get_rect(center=(px, board.centery + 2)))
-            gd.circle(s, GOLD, circ.center, 40, 3)
+            cy = board.centery
+            fx.blit_glow(s, px, cy, 52, _shade(P_COLORS[i], 0.3))
+            gd.circle(s, (12, 14, 34), (px, cy), 42)
+            gd.circle(s, P_COLORS[i], (px, cy), 39)
+            gd.circle(s, (16, 24, 52), (px, cy), 34)
+            s.blit(por, por.get_rect(center=(px, cy + 2)))
+            gd.circle(s, GOLD, (px, cy), 39, 3)
             name = sim.DISPLAY_NAMES[char]
             if self.mode == "local2":
                 tag = "P%d" % (i + 1)
@@ -2121,38 +2215,43 @@ class MatchScene(Scene, OnlineMixin):
                 tag = "SEN" if i == 0 else "CPU"
             else:
                 tag = "SEN" if i == self.me else "RAKİP"
-            nx = px - 50 if i == 0 else px + 50
-            draw_text(s, "%s · %s" % (tag, name), 20, (nx, 30), P_COLORS[i],
-                      anchor="midright" if i == 0 else "midleft", outline=3)
+            # isim plakasi
+            plate = pygame.Rect(0, 0, 214, 32)
+            if i == 0:
+                plate.topright = (px - 48, 12)
+            else:
+                plate.topleft = (px + 48, 12)
+            pill(s, plate, (20, 28, 60), radius=12)
+            chip = pygame.Rect(0, 0, 62 if len(tag) > 3 else 50, 24)
+            chip.centery = plate.centery
+            if i == 0:
+                chip.left = plate.left + 5
+                draw_text(s, name, 19, (chip.right + 10, plate.centery - 1), WHITE, anchor="midleft", outline=2)
+            else:
+                chip.right = plate.right - 5
+                draw_text(s, name, 19, (chip.left - 10, plate.centery - 1), WHITE, anchor="midright", outline=2)
+            pill(s, chip, P_COLORS[i], radius=9)
+            draw_text(s, tag, 13, (chip.centerx, chip.centery - 1), WHITE, outline=2, title=False)
             # super bar
-            meter, armed = p[6], p[7]
+            meter_v, armed = p[6], p[7]
             pw = sim.CHARACTERS[char]["power"]
             col = FIRE_C if pw == "fire" else ICE_C
-            bw = 170
-            bar = pygame.Rect(0, 0, bw, 16)
+            bar = pygame.Rect(0, 0, 176, 20)
             if i == 0:
-                bar.midright = (px - 50, 62)
+                bar.topright = (px - 52, 50)
             else:
-                bar.midleft = (px + 50, 62)
-            gd.rect(s, (12, 16, 34), bar.inflate(6, 6), 0, border_radius=8)
-            fill = bar.copy()
-            fill.w = int(bw * meter / 100)
-            if i == 1:
-                fill.right = bar.right
-            full = meter >= 100 or armed > 0
-            fc = col if not full else tuple(min(255, int(c * (1 + 0.3 * math.sin(self.t * 10)))) for c in col)
-            if fill.w > 0:
-                gd.rect(s, fc, fill, 0, border_radius=6)
-            gd.rect(s, (230, 230, 240), bar.inflate(6, 6), 2, border_radius=8)
+                bar.topleft = (px + 52, 50)
+            full = meter_v >= 100 or armed > 0
+            meter(s, bar, meter_v / 100, col, right=(i == 1), glow=full and int(self.t * 6) % 2 == 0)
             ic = A.icon_fire if pw == "fire" else A.icon_ice
-            s.blit(ic, ic.get_rect(center=(bar.left - 20 if i == 0 else bar.right + 20, bar.centery)))
+            s.blit(ic, ic.get_rect(center=(bar.left - 18 if i == 0 else bar.right + 18, bar.centery)))
             local = self.mode == "local2" or i == self.me
             if full and local:
                 if armed > 0:
                     t = "SÜPER AKTİF!"
                 else:
-                    t = "SÜPER HAZIR! [%s]" % ("S / ↓" if self.mode != "local2" else ("S" if i == 0 else "↓"))
-                draw_text(s, t, 16, (bar.centerx, bar.bottom + 14), col, outline=2)
+                    t = "SÜPER HAZIR · %s" % ("S / ↓" if self.mode != "local2" else ("S" if i == 0 else "↓"))
+                draw_text(s, t, 16, (bar.centerx, bar.bottom + 14), col, outline=3)
             # aktif guc ikonlari
             icons = []
             if p[10] > 0:
