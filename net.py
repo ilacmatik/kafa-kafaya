@@ -17,7 +17,8 @@ def local_ips():
             ips.add(info[4][0])
     except OSError:
         pass
-    for probe in ("10.255.255.255", "192.168.255.255", "172.16.255.255"):
+    # 100.100.100.100: Tailscale (internet uzerinden sanal ag) adresi
+    for probe in ("10.255.255.255", "192.168.255.255", "172.16.255.255", "100.100.100.100"):
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect((probe, 1))

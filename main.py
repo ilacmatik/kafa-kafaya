@@ -33,6 +33,7 @@ from gfx import draw as gd, transform as tf  # noqa: E402
 from sim import PEN_AIM_T, PEN_SHOT_T  # noqa: E402
 import net  # noqa: E402
 import sim  # noqa: E402
+import touch  # noqa: E402
 
 W, H = sim.W, sim.H
 FPS = 60
@@ -142,7 +143,8 @@ def mirror_snap(m):
 
 
 def record_path():
-    return os.path.join(os.path.expanduser("~"), "kafakafaya_kayit.json")
+    base = os.environ.get("ANDROID_PRIVATE") or os.path.expanduser("~")
+    return os.path.join(base, "kafakafaya_kayit.json")
 
 
 def load_record():
@@ -1388,10 +1390,10 @@ class HostWaitScene(Scene):
         # donen top
         img = tf.rotate(self.app.assets.ball, -self.t * 300)
         s.blit(img, img.get_rect(center=(W // 2, 300)))
-        draw_text(s, "Bu bilgisayarın IP adresi:", 24, (W // 2, 355), (190, 210, 235), outline=2, title=False)
+        draw_text(s, "Bu cihazın IP adresi:", 24, (W // 2, 355), (190, 210, 235), outline=2, title=False)
         ip_txt = "   /   ".join(self.ips[:3]) if self.ips else "Ağ bağlantısı bulunamadı!"
         draw_text(s, ip_txt, 44, (W // 2, 400), GOLD, outline=4)
-        draw_text(s, "Diğer PC'de  MAÇA KATIL  seçin. Maç listede otomatik görünür,", 20, (W // 2, 455),
+        draw_text(s, "Diğer cihazda  MAÇA KATIL  seçin. Maç listede otomatik görünür,", 20, (W // 2, 455),
                   WHITE, outline=2, title=False)
         draw_text(s, "görünmezse yukarıdaki IP adresini yazarak bağlanın.", 20, (W // 2, 482), WHITE, outline=2,
                   title=False)
@@ -1400,6 +1402,9 @@ class HostWaitScene(Scene):
         s.blit(self.app.assets.slice3("ui_btn", dur.w, dur.h), dur.topleft)
         draw_text(s, "MAÇ SÜRESİ:  <  %d sn  >" % DURATIONS[self.dur_i], 26, (dur.centerx, dur.centery - 2), WHITE,
                   outline=3)
+        if touch.ENABLED:
+            touch.zones.append((pygame.Rect(dur.x, dur.y, dur.w // 2, dur.h), pygame.K_LEFT, ""))
+            touch.zones.append((pygame.Rect(dur.centerx, dur.y, dur.w // 2, dur.h), pygame.K_RIGHT, ""))
         draw_text(s, "ESC: geri", 18, (W // 2, H - 30), (190, 200, 220), outline=2, title=False)
 
 
@@ -1415,6 +1420,8 @@ class JoinScene(Scene):
         self.t = 0
         self.wait_welcome = None
         self.rows = []
+        self.pad = False
+        self.ip_box = None
 
     def leave(self):
         self.finder.stop()
@@ -1426,6 +1433,7 @@ class JoinScene(Scene):
         self.error = ""
         self.target = ip
         self.connector = net.Connector(ip)
+        self.pad = False
 
     def handle(self, e):
         if self.connector or self.wait_welcome:
@@ -1436,8 +1444,17 @@ class JoinScene(Scene):
                 self.wait_welcome = None
             return
         hosts = self.finder.hosts()
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_F2:
+            self.pad = False
+            return
+        if (e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and touch.ENABLED and
+                getattr(self, "ip_box", None) is not None and self.ip_box.collidepoint(e.pos)):
+            self.pad = True
+            return
         if e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_ESCAPE:
+            if e.key == pygame.K_ESCAPE and getattr(self, "pad", False):
+                self.pad = False
+            elif e.key == pygame.K_ESCAPE:
                 self.app.go(MenuScene(self.app))
             elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if self.ip:
@@ -1512,7 +1529,11 @@ class JoinScene(Scene):
         gd.rect(s, (245, 245, 250), box, 0, border_radius=14)
         gd.rect(s, GOLD, box, 4, border_radius=14)
         cur = "|" if int(self.t * 2) % 2 == 0 else " "
-        draw_text(s, self.ip + cur, 32, box.center, DARK, outline=0, title=False)
+        self.ip_box = box
+        if touch.ENABLED and not self.ip:
+            draw_text(s, "IP yazmak için dokun", 24, box.center, (130, 140, 160), outline=0, title=False)
+        else:
+            draw_text(s, self.ip + cur, 32, box.center, DARK, outline=0, title=False)
         if self.connector:
             draw_text(s, "Bağlanıyor: %s ..." % self.target, 24, (W // 2, 600), GOLD, outline=3)
         elif self.wait_welcome:
@@ -1521,9 +1542,34 @@ class JoinScene(Scene):
             draw_text(s, self.error, 22, (W // 2, 595), (255, 120, 110), outline=2)
             draw_text(s, "IP'yi, kabloyu ve güvenlik duvarını kontrol et.", 18, (W // 2, 622), WHITE,
                       outline=2, title=False)
+        elif touch.ENABLED:
+            draw_text(s, "Maça dokun ya da IP yaz  ·  Geri: telefonun geri tuşu", 20, (W // 2, 605),
+                      (190, 200, 220), outline=2, title=False)
         else:
             draw_text(s, "ENTER: bağlan   ↑↓: seç   ESC: geri", 20, (W // 2, 605), (190, 200, 220), outline=2,
                       title=False)
+        if touch.ENABLED and getattr(self, "pad", False):
+            self._draw_pad(s)
+
+    def _draw_pad(self, s):
+        s.overlay((5, 8, 20, 170))
+        frame(s, (W // 2 - 250, 110, 500, 590))
+        box = pygame.Rect(W // 2 - 210, 140, 420, 58)
+        gd.rect(s, (245, 245, 250), box, 0, border_radius=14)
+        gd.rect(s, GOLD, box, 4, border_radius=14)
+        cur = "|" if int(self.t * 2) % 2 == 0 else " "
+        draw_text(s, self.ip + cur, 32, box.center, DARK, outline=0, title=False)
+        keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "SİL"]
+        for i, kname in enumerate(keys):
+            r_, c_ = divmod(i, 3)
+            rect = (W // 2 - 205 + c_ * 140, 218 + r_ * 92, 130, 80)
+            if kname == "SİL":
+                touch_button(s, rect, "SİL", pygame.K_BACKSPACE, (200, 90, 60))
+            else:
+                kc = pygame.K_PERIOD if kname == "." else getattr(pygame, "K_" + kname)
+                touch_button(s, rect, kname, kc, (40, 90, 170), uni=kname)
+        touch_button(s, (W // 2 - 205, 590, 200, 70), "KAPAT", pygame.K_F2, (90, 100, 120))
+        touch_button(s, (W // 2 + 5, 590, 200, 70), "BAĞLAN", pygame.K_RETURN, (40, 160, 80))
 
 
 class SelectScene(Scene, OnlineMixin):
@@ -1599,6 +1645,17 @@ class SelectScene(Scene, OnlineMixin):
                 self.rolling[w_] = 0.75
 
     def handle(self, e):
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            # dokunma/fare kisayollari: sure, zorluk, rakip
+            alias = None
+            if pygame.Rect(W // 2 - 110, 222, 220, 28).collidepoint(e.pos):
+                alias = pygame.K_t
+            elif self.mode == "bot" and pygame.Rect(W - 412, 220, 270, 36).collidepoint(e.pos):
+                alias = pygame.K_z
+            elif self.mode == "bot" and pygame.Rect(780, 40, 470, 175).collidepoint(e.pos):
+                alias = pygame.K_DOWN
+            if alias is not None:
+                e = pygame.event.Event(pygame.KEYDOWN, key=alias, unicode="", mod=0, scancode=0)
         if e.type == pygame.KEYDOWN and e.key == pygame.K_r:
             self._random()
             return
@@ -1861,7 +1918,16 @@ class SelectScene(Scene, OnlineMixin):
         else:
             hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava · B seri" if self.mode == "host" else
                                              " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
-        draw_text(s, hint + "   ·   R rastgele   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
+        if touch.ENABLED:
+            hint = "Karaktere dokun, tekrar dokun: HAZIR  ·  Süreye / stadyuma / havaya dokunarak değiştir"
+            if self.mode == "bot":
+                hint += "  ·  Rakibi değiştirmek için sağ üst panele dokun"
+            draw_text(s, hint, 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
+            if self.mode == "client":
+                touch_button(s, (W - 230, 676, 210, 38), "GÖRÜNÜMÜ ÇEVİR", pygame.K_v, (60, 90, 170))
+        else:
+            draw_text(s, hint + "   ·   R rastgele   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2,
+                      title=False)
 
 
 # ====================================================================== mac
@@ -1965,7 +2031,12 @@ class MatchScene(Scene, OnlineMixin):
     # -------------------------------------------------- girdi
     def _held(self, keymap):
         k = pygame.key.get_pressed()
-        return {a: any(k[c] for c in keys) for a, keys in keymap.items()}
+        h = {a: any(k[c] for c in keys) for a, keys in keymap.items()}
+        if touch.ENABLED and keymap in (KEYS_SOLO, KEYS_P1):
+            for a in touch.held():
+                if a in h:
+                    h[a] = True
+        return h
 
     def _maps(self):
         if self.mode == "local2":
@@ -2891,6 +2962,24 @@ class MatchScene(Scene, OnlineMixin):
             draw_text(screen, txt, 60, (W // 2, 300), col, outline=7, alpha=int(255 * min(1, t * 3)))
 
     def draw(self, screen):
+        self._draw_main(screen)
+        if touch.ENABLED:
+            self._draw_touch(screen)
+
+    def _draw_touch(self, s):
+        snap = self.snap
+        if snap is None or self.paused or self.quit_ask or snap["ph"] == "over":
+            touch.release_all()
+            return
+        touch.active = True
+        A = self.app.assets
+        hd = touch.held()
+        for act, (x, y, r) in touch.BUTTONS.items():
+            on = act in hd
+            im = (A.touch_btn_on if on else A.touch_btn)[act]
+            s.blit(im, im.get_rect(center=(x, y + (3 if on else 0))))
+
+    def _draw_main(self, screen):
         A = self.app.assets
         s = self.frame
         if self.snap and self.snap.get("pen") and self.snap["ph"] in ("pen_ready", "pen_aim", "pen_shot", "pen_res"):
@@ -3709,15 +3798,38 @@ class MatchScene(Scene, OnlineMixin):
                     hint = "Rakibin rövanş onayı bekleniyor..."
                 elif other_ok:
                     hint = "Rakip rövanş istiyor!  ENTER: kabul"
-            draw_text(s, hint, 22, (W // 2, 610), (220, 230, 250), outline=3, title=False)
+            if touch.ENABLED:
+                if "ENTER" not in hint:
+                    draw_text(s, hint, 22, (W // 2, 618), (220, 230, 250), outline=3, title=False)
+                elif "kabul" in hint:
+                    draw_text(s, "Rakip rövanş istiyor!", 22, (W // 2, 618), GOLD, outline=3, title=False)
+                if self.cup is not None:
+                    touch_button(s, (W // 2 - 130, 664, 260, 50), "DEVAM", pygame.K_RETURN, (40, 160, 80))
+                else:
+                    sr_on = sr and self.mode in ("bot", "local2", "host", "client")
+                    l1 = ("SONRAKİ MAÇ" if not self.series_done else "YENİ SERİ") if sr_on else "RÖVANŞ"
+                    l2 = "SERİYİ BİTİR" if (sr_on and not self.series_done) else "KARAKTER SEÇ"
+                    touch_button(s, (W // 2 - 290, 664, 270, 50), l1, pygame.K_RETURN, (40, 160, 80))
+                    touch_button(s, (W // 2 + 20, 664, 270, 50), l2, pygame.K_ESCAPE, (60, 90, 170))
+            else:
+                draw_text(s, hint, 22, (W // 2, 610), (220, 230, 250), outline=3, title=False)
         if self.paused:
             s.overlay((5, 8, 20, 170))
             draw_text(s, "DURAKLATILDI", 70, (W // 2, 280), GOLD, outline=6)
-            draw_text(s, "ESC: devam     Q: ana menü", 28, (W // 2, 370), WHITE, outline=3, title=False)
+            if touch.ENABLED:
+                touch_button(s, (W // 2 - 280, 360, 250, 60), "DEVAM", pygame.K_ESCAPE, (40, 160, 80))
+                touch_button(s, (W // 2 + 30, 360, 250, 60), "ANA MENÜ", pygame.K_q, (200, 70, 60))
+            else:
+                draw_text(s, "ESC: devam     Q: ana menü", 28, (W // 2, 370), WHITE, outline=3, title=False)
         if self.quit_ask:
             frame(s, (W // 2 - 290, 290, 580, 140))
             draw_text(s, "Maçtan çıkılsın mı?", 34, (W // 2, 335), WHITE, outline=3)
-            draw_text(s, "Q: çık     ESC: oyuna dön", 24, (W // 2, 385), (220, 230, 250), outline=2, title=False)
+            if touch.ENABLED:
+                touch_button(s, (W // 2 - 260, 450, 240, 58), "OYUNA DÖN", pygame.K_ESCAPE, (40, 160, 80))
+                touch_button(s, (W // 2 + 20, 450, 240, 58), "ÇIK", pygame.K_q, (200, 70, 60))
+            else:
+                draw_text(s, "Q: çık     ESC: oyuna dön", 24, (W // 2, 385), (220, 230, 250), outline=2,
+                          title=False)
 
 
 # ====================================================================== turnuva
@@ -3896,6 +4008,67 @@ class TrophyScene(Scene):
 
 
 # ====================================================================== uygulama
+TOUCH_COLS = {"l": (40, 110, 220), "r": (40, 110, 220), "j": (40, 170, 80), "k": (220, 60, 60),
+              "d": (235, 130, 30), "o": (140, 70, 200), "s": (220, 170, 30), "p": (90, 100, 120)}
+TOUCH_LABELS = {"j": "ZIPLA", "k": "ŞUT", "d": "AŞIRT", "o": "OMUZ", "s": "SÜPER"}
+
+
+def make_touch_buttons():
+    """Ekran dugmeleri: varsa Gemini cizimi (tc_<eylem>.png), yoksa kodla cizilir."""
+    out, out_on = {}, {}
+    k = gfx.K
+    for act, (_, _, r) in touch.BUTTONS.items():
+        size = int((r * 2 + 10) * k)
+        c = size / 2
+        path = res("assets", "tc_%s.png" % act)
+        if os.path.exists(path):
+            raw = pygame.image.load(path).convert_alpha()
+            base = pygame.transform.smoothscale(raw, (int(r * 2 * k), int(r * 2 * k)))
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            surf.blit(base, base.get_rect(center=(c, c)))
+        else:
+            col = TOUCH_COLS[act]
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (8, 12, 30, 255), (c, c + 3 * k), r * k + 2 * k)
+            pygame.draw.circle(surf, col + (255,), (c, c), r * k)
+            pygame.draw.circle(surf, tuple(min(255, v + 60) for v in col) + (255,), (c, c - r * k * 0.18), r * k * 0.72)
+            pygame.draw.circle(surf, col + (255,), (c, c + r * k * 0.08), r * k * 0.74)
+            pygame.draw.circle(surf, (255, 255, 255, 255), (c, c), r * k, max(2, int(3 * k)))
+            wcol = (255, 255, 255, 255)
+            u = r * k * 0.42
+            if act in ("l", "r"):
+                d = -1 if act == "l" else 1
+                pygame.draw.polygon(surf, wcol, [(c + d * u, c), (c - d * u * 0.7, c - u), (c - d * u * 0.7, c + u)])
+            elif act == "p":
+                bw = max(3, int(r * k * 0.22))
+                for dx in (-1, 1):
+                    pygame.draw.rect(surf, wcol, (c + dx * bw * 0.9 - bw / 2, c - r * k * 0.42, bw, r * k * 0.84),
+                                     border_radius=2)
+            else:
+                if act == "j":
+                    pygame.draw.polygon(surf, wcol, [(c, c - u * 1.15), (c - u * 0.85, c - u * 0.05),
+                                                     (c + u * 0.85, c - u * 0.05)])
+                    ty = c + u * 0.55
+                else:
+                    ty = c
+                fs = 17 if r < 55 else 21
+                t = text_surf(TOUCH_LABELS[act], fs, (255, 255, 255), 2, title=True).hi
+                surf.blit(t, t.get_rect(center=(c, ty)))
+        on = surf.copy()          # basiliyken tam opak
+        surf.fill((255, 255, 255, 135), special_flags=pygame.BLEND_RGBA_MULT)
+        out[act] = gfx.Img(surf)
+        out_on[act] = gfx.Img(on)
+    return out, out_on
+
+
+def touch_button(s, rect, label, key, color=(40, 120, 220), uni=""):
+    """Dokunmatik modda cizilen ve dokununca tus ureten buton."""
+    rect = pygame.Rect(rect)
+    pill(s, rect, color)
+    draw_text(s, label, 20, (rect.centerx, rect.centery - 1), WHITE, outline=3)
+    touch.zones.append((rect, key, uni))
+
+
 class App:
     def __init__(self):
         pygame.mixer.pre_init(22050, -16, 2, 512)
@@ -3923,6 +4096,8 @@ class App:
         self.assets = Assets()
         global ASSETS
         ASSETS = self.assets
+        if touch.ENABLED:
+            self.assets.touch_btn, self.assets.touch_btn_on = make_touch_buttons()
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
         self.mirror = load_record().get("mirror", True)
@@ -3936,11 +4111,16 @@ class App:
         self.hidden = False
         self._restore_events = tuple(getattr(pygame, n) for n in ("WINDOWRESTORED", "WINDOWFOCUSGAINED")
                                      if hasattr(pygame, n))
+        self._lost_events = tuple(getattr(pygame, n) for n in ("WINDOWFOCUSLOST", "APP_WILLENTERBACKGROUND",
+                                                               "WINDOWMINIMIZED") if hasattr(pygame, n))
+        self._mlock = touch.android_multicast_lock()
         self.scene = MenuScene(self)
 
     @staticmethod
     def _pick_scale():
         """Ekran cozunurlugune gore cizim olcegi: 1280x720 -> 1.0, 1920x1080 -> 1.5."""
+        if touch.ANDROID:
+            return 1.0   # telefonda 1280x720 cizilir, ekran karti buyutur (hizli)
         env = os.environ.get("KAFA_OLCEK")
         if env:
             try:
@@ -3990,10 +4170,26 @@ class App:
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
             for e in pygame.event.get():
-                if e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN) and gfx.K != 1.0:
+                if e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and gfx.K != 1.0:
                     d = dict(e.dict)
                     d["pos"] = (int(e.pos[0] / gfx.K), int(e.pos[1] / gfx.K))
                     e = pygame.event.Event(e.type, d)
+                if e.type == pygame.KEYDOWN and e.key == getattr(pygame, "K_AC_BACK", -1):
+                    # Android geri tusu = ESC
+                    e = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0, scancode=0)
+                if touch.ENABLED:
+                    if e.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+                        touch.finger_event(e)
+                        continue
+                    if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                        touch.calibrate_mouse(e.pos)
+                        if touch.zone_hit(e.pos):
+                            continue
+                    if e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION, pygame.MOUSEBUTTONUP):
+                        if touch.mouse_event(e) or (touch.ANDROID and touch.active):
+                            continue
+                    if e.type in self._lost_events:
+                        touch.release_all()
                 if e.type == pygame.QUIT:
                     self.running = False
                 elif e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
@@ -4012,6 +4208,8 @@ class App:
                 else:
                     self.scene.handle(e)
             self.scene.update(dt)
+            touch.zones.clear()
+            touch.active = False
             self.scene.draw(self.screen)
             pygame.display.flip()
         sc = self.scene
