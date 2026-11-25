@@ -43,7 +43,8 @@ STADIUMS = [
     {"name": "GECE ARENASI", "bg": "stadium_night_clean.jpg", "crowd": "crowd_night.json",
      "mask": "crowd_mask_night.png", "light": 0.82,
      "lamps": ((90, 80), (435, 194), (851, 194), (1180, 80)), "boards": None},
-    {"name": "TİMSAH ARENA", "bg": "stadium_timsah_clean.jpg", "crowd": "crowd_timsah.json",
+    {"name": "TİMSAH ARENA", "bg": "stadium_timsah_clean.jpg",
+     "wx": {"rain": "stadium_timsah_rain_clean.jpg", "snow": "stadium_timsah_snow_clean.jpg"}, "crowd": "crowd_timsah.json",
      "mask": "crowd_mask_timsah.png", "light": 0.95, "lamps": (), "boards": (527, 24)},
 ]
 ADS = [("ULUDAĞ GAZOZ", (255, 214, 60)), ("MATLI", (255, 120, 90)), ("TURKCELL", (255, 205, 40)),
@@ -596,6 +597,19 @@ class Assets:
                                               (int(W * gfx.K), int(H * gfx.K)))
             st.blit(vig, (0, 0))  # vinyet arka plana gomulu
             self.stadiums.append(gfx.Img(st))
+        self.stadium_wx = {}
+        for si, sd in enumerate(STADIUMS):
+            for wname, fn in sd.get("wx", {}).items():
+                if os.path.exists(res("assets", fn)):
+                    st = pygame.transform.smoothscale(pygame.image.load(res("assets", fn)).convert(),
+                                                      (int(W * gfx.K), int(H * gfx.K)))
+                    st.blit(vig, (0, 0))
+                    self.stadium_wx[(si, wname)] = gfx.Img(st)
+        self.banner_raw = {}
+        for n in ("bn_hold", "bn_flag", "bn_pennant", "bn_sign"):
+            if os.path.exists(res("assets", n + "0.png")):
+                self.banner_raw[n] = [pygame.image.load(res("assets", "%s%d.png" % (n, k))).convert_alpha()
+                                      for k in (0, 1)]
         self.board_strip = None
         self._shadow = {}
         GD, GH = sim.GOAL_D, sim.GROUND - sim.GOAL_TOP
@@ -2350,7 +2364,9 @@ class MatchScene(Scene, OnlineMixin):
     def draw(self, screen):
         A = self.app.assets
         s = self.frame
-        s.blit(A.stadiums[self.stad], (0, 0))
+        wxn = self.weather_now()
+        bgk = (self.stad, wxn)
+        s.blit(A.stadium_wx.get(bgk, A.stadiums[self.stad]), (0, 0))
         self.crowd.draw(s)
         self._draw_banners(s)
         sd = STADIUMS[self.stad]
@@ -2456,28 +2472,62 @@ class MatchScene(Scene, OnlineMixin):
         self._draw_overlays(screen, snap)
 
     def _make_banners(self):
-        """Taraftar pankartlari: karakterin kafasi + adi, forma renginde."""
+        """Gemini beyaz pankart/bayraklari forma rengine boyar, kafa + isim basar."""
         A = self.app.assets
-        k = gfx.K
         out = []
-        secs = self.crowd.banner_spots
+        spots = self.crowd.banner_spots
+        if not A.banner_raw:
+            return out
+        import numpy as _np  # noqa
         for side in (0, 1):
             c = self.chars[side]
             col = fx.TEAM["k%d" % c][0]
-            cv = gfx.Canvas(pygame.Surface((int(168 * k), int(66 * k)), pygame.SRCALPHA))
-            pill(cv, (0, 0, 168, 66), col, radius=16)
-            gd.circle(cv, (12, 14, 34), (34, 33), 29)
-            gd.circle(cv, (255, 255, 255), (34, 33), 27)
-            por = A.portrait[c]
-            cv.blit(por, por.get_rect(center=(34, 34)))
-            light = sum(col) > 560
-            draw_text(cv, sim.DISPLAY_NAMES[c], 22, (108, 33), (25, 30, 50) if light else WHITE,
-                      outline=0 if light else 3)
-            img = gfx.Img(cv.surf)
-            spots = [sp for sp in secs if (sp[0] < W / 2) == (side == 0)]
-            for x, y in spots:
-                out.append([img, x, y, random.uniform(0, 6.28), side])
+            my = [sp for sp in spots if (sp[0] < W / 2) == (side == 0)]
+            for n, (x, y) in enumerate(my):
+                kind = "bn_hold" if n % 2 == 0 else "bn_flag"
+                frames = [self._paint_banner(raw, col, c, kind) for raw in A.banner_raw[kind]]
+                out.append([frames, x, y, random.uniform(0, 6.28), side, kind])
         return out
+
+    def _paint_banner(self, raw, col, char, kind):
+        A = self.app.assets
+        k = gfx.K
+        lh = 44 if kind == "bn_hold" else 52     # mantiksal yukseklik (taraftar boyuna uygun)
+        f = lh * k / raw.get_height()
+        img = pygame.transform.smoothscale(raw, (max(1, int(raw.get_width() * f)), max(1, int(lh * k))))
+        w, h = img.get_size()
+        # beyaz bezi forma rengine boya (golgeler korunur)
+        px = pygame.PixelArray(img)
+        cloth = []
+        for xx in range(w):
+            for yy in range(h):
+                r, g, b, a = img.unmap_rgb(px[xx, yy])
+                if a > 80 and min(r, g, b) > 150 and max(r, g, b) - min(r, g, b) < 40:
+                    lum = (r + g + b) / 765.0
+                    px[xx, yy] = (int(col[0] * lum), int(col[1] * lum), int(col[2] * lum), a)
+                    cloth.append((xx, yy))
+        del px
+        if cloth:
+            xs = [p[0] for p in cloth]
+            ys = [p[1] for p in cloth]
+            x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+            ch = y1 - y0
+            por = A.portrait[char].hi
+            d = max(4, int(ch * 0.62))
+            pp = pygame.transform.smoothscale(por, (d, d))
+            light = sum(col) > 560
+            if kind == "bn_hold":
+                cx = x0 + int((x1 - x0) * 0.24)
+                img.blit(pp, (cx - d // 2, y0 + (ch - d) // 2))
+                f_ = get_font(max(6, int(ch * 0.30)), True)
+                t = f_.render(sim.DISPLAY_NAMES[char], True, (25, 30, 50) if light else (255, 255, 255))
+                if t.get_width() > (x1 - x0) * 0.52:
+                    t = pygame.transform.smoothscale(t, (int((x1 - x0) * 0.52),
+                                                         int(t.get_height() * (x1 - x0) * 0.52 / t.get_width())))
+                img.blit(t, (x0 + int((x1 - x0) * 0.68) - t.get_width() // 2, y0 + (ch - t.get_height()) // 2))
+            else:
+                img.blit(pp, (x0 + (x1 - x0) // 2 - d // 2, y0 + (ch - d) // 2))
+        return gfx.Img(img)
 
     def _draw_ref(self, s, snap):
         A = self.app.assets
@@ -2499,8 +2549,10 @@ class MatchScene(Scene, OnlineMixin):
         if wx == "clear":
             return
         A = self.app.assets
+        themed = (self.stad, wx) in A.stadium_wx
         if wx == "rain":
-            s.overlay((10, 20, 40, 70))
+            if not themed:
+                s.overlay((10, 20, 40, 70))
             drop = A.fx("wx_drop", 9)
             wd = snap.get("wd", 0) * 0.02
             for x, y, k in self.rain:
@@ -2512,7 +2564,8 @@ class MatchScene(Scene, OnlineMixin):
                     if sp is not None:
                         s.blit(sp, sp.get_rect(midbottom=(x, sim.GROUND + 3)))
         elif wx == "snow":
-            s.overlay((200, 215, 240, 26))
+            if not themed:
+                s.overlay((200, 215, 240, 26))
             flake = A.fx("wx_flake", 12)
             for x, y, k in self.rain:
                 if flake is not None:
@@ -2552,15 +2605,14 @@ class MatchScene(Scene, OnlineMixin):
     def _draw_banners(self, s):
         ex = self.crowd.excite
         sad = self.crowd.boost_side if self.crowd.boost_t > 0 else -1
-        for img, x, y, ph, side in self.banners:
+        if self.crowd.fill < 1.0:
+            return
+        for frames, x, y, ph, side, kind in self.banners:
             happy = sad < 0 or sad == side
-            lift = (ex * 22 * abs(math.sin(self.t * 7 + ph))) if happy else 0
-            ang = math.sin(self.t * (2.2 + ex * 4) + ph) * (3 + ex * 6 if happy else 1.5)
-            cy = y - lift
-            for dx in (-36, 36):
-                gd.line(s, (70, 60, 55), (x + dx, cy + 6), (x + dx, cy + 30), 2)
-            r_ = tf.rotozoom(img, ang, 0.6)
-            s.blit(r_, r_.get_rect(center=(x, cy)))
+            rate = (2.5 + ex * 6) if happy else 1.2
+            img = frames[int(self.t * rate + ph) % 2]
+            lift = (ex * 10 * abs(math.sin(self.t * 7 + ph))) if happy else 0
+            s.blit(img, img.get_rect(midbottom=(x, y + 20 - lift)))
 
     def _draw_boards(self, s, spec, snap):
         """Saha kenarindaki LED reklam panolari: kayan yazilar, golde GOOOL."""
