@@ -2636,16 +2636,13 @@ class MatchScene(Scene, OnlineMixin):
         if self.snap:
             ph_ = self.snap["ph"]
             active = self.ref_pose[1] > 0 or ph_ in ("ready", "pen_ready", "over")
-            goal_ = 1.0 if active else 0.0
-            self.ref_on += (goal_ - self.ref_on) * min(1.0, dt * 3.5)
+            # hakem hep kenarda (tribun onunde) kalir, sahaya girmez; topu uzaktan takip eder
+            self.ref_on = 0.0
             if ph_ in ("ready", "pen_ready"):
                 tx = W / 2 + 60
-            elif active:
-                tx = self.ref_target
             else:
-                bxr = self.snap["b"][0]
-                tx = max(160, min(W - 160, bxr))
-            self.ref_x += (tx - self.ref_x) * min(1.0, dt * (3.0 if active else 1.0))
+                tx = max(160, min(W - 160, self.snap["b"][0]))
+            self.ref_x += (tx - self.ref_x) * min(1.0, dt * 1.2)
         self.ref_pose[1] -= dt
         for r_ in self.rain:
             r_[1] += 900 * r_[2] * dt if self.weather_now() == "rain" else 70 * r_[2] * dt
