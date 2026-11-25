@@ -28,6 +28,8 @@ os.environ.setdefault("SDL_HINT_RENDER_SCALE_QUALITY", "1")
 import pygame  # noqa: E402
 
 import fx  # noqa: E402
+import gfx  # noqa: E402
+from gfx import draw as gd, transform as tf  # noqa: E402
 import net  # noqa: E402
 import sim  # noqa: E402
 
@@ -87,20 +89,29 @@ def get_font(size, title=False):
 
 
 def text_surf(txt, size, color=WHITE, outline=3, ocolor=(15, 18, 30), title=True):
+    """Yaziyi ekran cozunurlugunde (K kat) cizer, gfx.Img dondurur."""
     key = (txt, size, color, outline, ocolor, title)
     s = _tcache.get(key)
     if s is not None:
         return s
-    f = get_font(size, title)
+    k = gfx.K
+    f = get_font(max(6, int(round(size * k))), title)
     base = f.render(txt, True, color)
+    o_px = int(round(outline * k))
     if outline:
         o = f.render(txt, True, ocolor)
-        s = pygame.Surface((base.get_width() + outline * 2, base.get_height() + outline * 2), pygame.SRCALPHA)
-        for dx, dy in ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)):
-            s.blit(o, (outline + dx * outline, outline + dy * outline))
-        s.blit(base, (outline, outline))
+        surf = pygame.Surface((base.get_width() + o_px * 2, base.get_height() + o_px * 2), pygame.SRCALPHA)
+        steps = max(1, o_px)
+        dirs = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        for dx, dy in dirs:
+            surf.blit(o, (o_px + dx * steps, o_px + dy * steps))
+        if o_px >= 3:
+            for dx, dy in dirs:
+                surf.blit(o, (o_px + dx * steps // 2, o_px + dy * steps // 2))
+        surf.blit(base, (o_px, o_px))
     else:
-        s = base
+        surf = base
+    s = gfx.Img(surf)
     if len(_tcache) > 500:
         _tcache.clear()
     _tcache[key] = s
@@ -120,11 +131,12 @@ def draw_text(surf, txt, size, pos, color=WHITE, anchor="center", outline=3, tit
 
 def panel(surf, rect, color=(15, 20, 40, 200), radius=16, border=None, bw=3):
     r = pygame.Rect(rect)
-    s = pygame.Surface(r.size, pygame.SRCALPHA)
-    pygame.draw.rect(s, color, s.get_rect(), 0, border_radius=radius)
+    k = gfx.K
+    s = pygame.Surface((max(1, int(r.w * k)), max(1, int(r.h * k))), pygame.SRCALPHA)
+    pygame.draw.rect(s, color, s.get_rect(), 0, border_radius=int(radius * k))
     if border:
-        pygame.draw.rect(s, border, s.get_rect(), bw, border_radius=radius)
-    surf.blit(s, r.topleft)
+        pygame.draw.rect(s, border, s.get_rect(), max(1, int(bw * k)), border_radius=int(radius * k))
+    surf.blit(gfx.Img(s), r.topleft)
 
 
 # ====================================================================== ses
@@ -354,36 +366,52 @@ class Sound:
 
 # ====================================================================== gorseller
 class Assets:
+    """Tum gorseller gfx.Img olarak (ekran cozunurlugunde keskin)."""
+
     def __init__(self):
-        L = lambda f: pygame.image.load(res("assets", f))
-        self.stadium = L("stadium_clean.jpg").convert()
-        self.vignette = fx.make_vignette(W, H)
+        def L(f):
+            return pygame.image.load(res("assets", f)).convert_alpha()
+
+        def S(raw, w, h):
+            return gfx.from_surface(raw, (w, h))
+
+        def scaled(raw, f):
+            return S(raw, raw.get_width() * f, raw.get_height() * f)
+
+        self.stadium = gfx.from_surface(pygame.image.load(res("assets", "stadium_clean.jpg")).convert(), (W, H))
+        self.vignette = gfx.Img(fx.make_vignette(int(W * gfx.K), int(H * gfx.K)))
         GD, GH = sim.GOAL_D, sim.GROUND - sim.GOAL_TOP
-        self.net_shade = pygame.Surface((GD, GH), pygame.SRCALPHA)
-        for x in range(GD):
-            pygame.draw.line(self.net_shade, (20, 30, 40, 60 + int(50 * abs(x - GD / 2) / GD)), (x, 0), (x, GH))
-        self.net_lines = pygame.Surface((GD, GH), pygame.SRCALPHA)
+        k = gfx.K
+        sh = pygame.Surface((int(GD * k), int(GH * k)), pygame.SRCALPHA)
+        for x in range(sh.get_width()):
+            pygame.draw.line(sh, (20, 30, 40, 60 + int(50 * abs(x - sh.get_width() / 2) / sh.get_width())),
+                             (x, 0), (x, sh.get_height()))
+        self.net_shade = gfx.Img(sh)
+        nl = pygame.Surface((int(GD * k), int(GH * k)), pygame.SRCALPHA)
+        lw = max(1, int(2 * k))
         for x in range(0, GD + 1, 14):
-            pygame.draw.line(self.net_lines, (240, 240, 245, 170), (x, 0), (x, GH), 2)
+            pygame.draw.line(nl, (240, 240, 245, 170), (x * k, 0), (x * k, GH * k), lw)
         for y in range(0, GH, 14):
-            pygame.draw.line(self.net_lines, (240, 240, 245, 170), (0, y), (GD, y), 2)
-        mb = L("menu_bg.jpg").convert()
-        dark = pygame.Surface((W, H), pygame.SRCALPHA)
+            pygame.draw.line(nl, (240, 240, 245, 170), (0, y * k), (GD * k, y * k), lw)
+        self.net_lines = gfx.Img(nl)
+        mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "menu_bg.jpg")).convert(),
+                                          (int(W * k), int(H * k)))
+        dark = pygame.Surface(mb.get_size(), pygame.SRCALPHA)
         dark.fill((10, 15, 40, 120))
         mb.blit(dark, (0, 0))
-        self.menu_bg = mb
+        self.menu_bg = gfx.Img(mb)
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
         self.big_celeb = []
         self.kick_anchor = []
         self.poses = []
         for i in range(6):
-            idle = L("p%d_idle.png" % i).convert_alpha()
-            kick = L("p%d_kick.png" % i).convert_alpha()
+            idle = L("p%d_idle.png" % i)
+            kick = L("p%d_kick.png" % i)
             sc = sim.CHARACTERS[i]["scale"]
             f = sim.BASE_H * sc / idle.get_height()
-            iw = pygame.transform.smoothscale(idle, (round(idle.get_width() * f), round(idle.get_height() * f)))
-            kw = pygame.transform.smoothscale(kick, (round(kick.get_width() * f), round(kick.get_height() * f)))
+            iw = scaled(idle, f)
+            kw = scaled(kick, f)
             self.idle.append(iw)
             self.kick.append(kw)
             self.idle_ice.append(self._ice(iw))
@@ -391,58 +419,54 @@ class Assets:
             self.kick_anchor.append(0.40)
             poses = {}
             if os.path.exists(res("assets", "p%d_run1.png" % i)):
-                for k in ("run1", "run2", "jump", "celeb"):
-                    im = L("p%d_%s.png" % (i, k)).convert_alpha()
-                    poses[k] = pygame.transform.smoothscale(
-                        im, (round(im.get_width() * f), round(im.get_height() * f)))
+                for name in ("run1", "run2", "jump", "celeb"):
+                    poses[name] = scaled(L("p%d_%s.png" % (i, name)), f)
                 poses["jump_ice"] = self._ice(poses["jump"])
             self.poses.append(poses)
             bh = 215
-            self.big.append(pygame.transform.smoothscale(idle, (round(idle.get_width() * bh / idle.get_height()), bh)))
             fb = bh / idle.get_height()
+            self.big.append(scaled(idle, fb))
             cp = res("assets", "p%d_celeb.png" % i)
-            cimg = L("p%d_celeb.png" % i).convert_alpha() if os.path.exists(cp) else idle
-            self.big_celeb.append(pygame.transform.smoothscale(
-                cimg, (round(cimg.get_width() * fb), round(cimg.get_height() * fb))))
+            cimg = L("p%d_celeb.png" % i) if os.path.exists(cp) else idle
+            self.big_celeb.append(scaled(cimg, fb))
             head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.45))).copy()
             ph = 58
-            self.portrait.append(pygame.transform.smoothscale(head, (round(head.get_width() * ph / head.get_height()), ph)))
+            self.portrait.append(scaled(head, ph / head.get_height()))
         d = sim.BALL_R * 2 + 2
-        self.ball = pygame.transform.smoothscale(L("ball.png").convert_alpha(), (d, d))
-        self.ball_fire = self._fit(L("ball_fire.png").convert_alpha(), int(d * 1.45))
-        self.ball_ice = self._fit(L("ball_ice.png").convert_alpha(), int(d * 1.45))
-        self.fx_fire = self._fit(L("fx_fire.png").convert_alpha(), 150)
-        self.fx_ice = self._fit(L("fx_ice.png").convert_alpha(), 140)
-        self.ice_block = self._fit(L("fx_ice.png").convert_alpha(), 120)
-        self.pu = {k: self._fit(L(f).convert_alpha(), 66) for k, f in
+        self.ball = S(L("ball.png"), d, d)
+        self.ball_fire = self._fit(L("ball_fire.png"), int(d * 1.45))
+        self.ball_ice = self._fit(L("ball_ice.png"), int(d * 1.45))
+        self.fx_fire = self._fit(L("fx_fire.png"), 150)
+        self.fx_ice = self._fit(L("fx_ice.png"), 140)
+        self.ice_block = self._fit(L("fx_ice.png"), 120)
+        self.pu = {key: self._fit(L(f), 66) for key, f in
                    (("speed", "pu_speed.png"), ("jump", "pu_jump.png"), ("shield", "pu_shield.png"),
                     ("freeze", "pu_freeze.png"), ("gold", "orb_gold.png"))}
-        self.pu_small = {k: pygame.transform.smoothscale(v, (30, 30)) for k, v in self.pu.items()}
-        self.flag = self._fit(L("flag.png").convert_alpha(), 70)
-        self.icon_fire = self._fit(L("ball_fire.png").convert_alpha(), 30)
-        self.icon_ice = self._fit(L("ball_ice.png").convert_alpha(), 30)
+        self.pu_small = {key: tf.smoothscale(v, (30, 30)) for key, v in self.pu.items()}
+        self.icon_fire = self._fit(L("ball_fire.png"), 30)
+        self.icon_ice = self._fit(L("ball_ice.png"), 30)
         self._flip_cache = {}
 
     @staticmethod
-    def _fit(img, size):
-        w, h = img.get_size()
+    def _fit(raw, size):
+        w, h = raw.get_size()
         f = size / max(w, h)
-        return pygame.transform.smoothscale(img, (max(1, round(w * f)), max(1, round(h * f))))
+        return gfx.from_surface(raw, (w * f, h * f))
 
     @staticmethod
     def _ice(img):
-        s = img.copy()
+        s = img.hi.copy()
         s.fill((150, 200, 255, 255), special_flags=pygame.BLEND_RGBA_MULT)
         s.fill((40, 70, 110, 0), special_flags=pygame.BLEND_RGBA_ADD)
-        return s
+        return gfx.Img(s)
 
     def flipped(self, img):
-        k = id(img)
-        f = self._flip_cache.get(k)
-        if f is None:
-            f = pygame.transform.flip(img, True, False)
-            self._flip_cache[k] = f
-        return f
+        key = id(img)
+        f = self._flip_cache.get(key)
+        if f is None or f[0] is not img:
+            f = (img, tf.flip(img, True, False))
+            self._flip_cache[key] = f
+        return f[1]
 
 
 # ====================================================================== sahneler
@@ -475,14 +499,14 @@ class Button:
         if hot:
             r.inflate_ip(14 + 4 * math.sin(t * 6), 8)
         sh = r.move(0, 6)
-        pygame.draw.rect(s, (10, 14, 30), sh, 0, border_radius=18)
+        gd.rect(s, (10, 14, 30), sh, 0, border_radius=18)
         c = tuple(min(255, int(v * (1.25 if hot else 1))) for v in self.color)
-        pygame.draw.rect(s, c, r, 0, border_radius=18)
+        gd.rect(s, c, r, 0, border_radius=18)
         hl = pygame.Rect(r.x + 6, r.y + 4, r.w - 12, r.h // 2 - 4)
         hs = pygame.Surface(hl.size, pygame.SRCALPHA)
-        pygame.draw.rect(hs, (255, 255, 255, 50), hs.get_rect(), 0, border_radius=14)
+        gd.rect(hs, (255, 255, 255, 50), hs.get_rect(), 0, border_radius=14)
         s.blit(hs, hl.topleft)
-        pygame.draw.rect(s, GOLD if hot else (230, 235, 255), r, 4, border_radius=18)
+        gd.rect(s, GOLD if hot else (230, 235, 255), r, 4, border_radius=18)
         draw_text(s, self.text, 30, r.center)
 
 
@@ -568,7 +592,7 @@ class MenuScene(Scene):
         A = self.app.assets
         s.blit(A.menu_bg, (0, 0))
         for b in self.balls:
-            img = pygame.transform.rotate(A.ball, -math.degrees(b[3]))
+            img = tf.rotate(A.ball, -math.degrees(b[3]))
             img.set_alpha(110)
             s.blit(img, img.get_rect(center=(b[0], b[1])))
         l = A.big[0]
@@ -702,7 +726,7 @@ class HostWaitScene(Scene):
         dots = "." * (int(self.t * 2) % 4)
         draw_text(s, "RAKİP BEKLENİYOR" + dots, 40, (W // 2 - 0, 235), WHITE, outline=4)
         # donen top
-        img = pygame.transform.rotate(self.app.assets.ball, -self.t * 300)
+        img = tf.rotate(self.app.assets.ball, -self.t * 300)
         s.blit(img, img.get_rect(center=(W // 2, 300)))
         draw_text(s, "Bu bilgisayarın IP adresi:", 24, (W // 2, 355), (190, 210, 235), outline=2, title=False)
         ip_txt = "   /   ".join(self.ips[:3]) if self.ips else "Ağ bağlantısı bulunamadı!"
@@ -812,15 +836,15 @@ class JoinScene(Scene):
         for i, (ip, name, port) in enumerate(hosts[:4]):
             r = pygame.Rect(W // 2 - 300, 225 + i * 56, 600, 48)
             hot = i == self.sel and not self.ip
-            pygame.draw.rect(s, (230, 110, 30) if hot else (40, 60, 110), r, 0, border_radius=12)
-            pygame.draw.rect(s, GOLD if hot else (120, 140, 190), r, 3, border_radius=12)
+            gd.rect(s, (230, 110, 30) if hot else (40, 60, 110), r, 0, border_radius=12)
+            gd.rect(s, GOLD if hot else (120, 140, 190), r, 3, border_radius=12)
             draw_text(s, "%s   (%s)" % (name, ip), 24, r.center, WHITE, outline=2)
             self.rows.append((r, ip))
         y = 470
         draw_text(s, "veya IP adresini yaz:", 22, (W // 2, y), (190, 210, 235), outline=2, title=False)
         box = pygame.Rect(W // 2 - 200, y + 22, 400, 56)
-        pygame.draw.rect(s, (245, 245, 250), box, 0, border_radius=12)
-        pygame.draw.rect(s, GOLD, box, 4, border_radius=12)
+        gd.rect(s, (245, 245, 250), box, 0, border_radius=12)
+        gd.rect(s, GOLD, box, 4, border_radius=12)
         cur = "|" if int(self.t * 2) % 2 == 0 else " "
         f = get_font(34, True)
         ts = f.render(self.ip + cur, True, DARK)
@@ -982,12 +1006,12 @@ class SelectScene(Scene, OnlineMixin):
             rr = r.inflate(10, 10) if hot else r
             panel(s, rr, (25, 35, 70, 225) if hot else (15, 20, 40, 200), 18)
             if sel0 and sel1:
-                pygame.draw.rect(s, P_COLORS[0], rr, 5, border_radius=18)
-                pygame.draw.rect(s, P_COLORS[1], rr.inflate(-10, -10), 4, border_radius=14)
+                gd.rect(s, P_COLORS[0], rr, 5, border_radius=18)
+                gd.rect(s, P_COLORS[1], rr.inflate(-10, -10), 4, border_radius=14)
             elif sel0 or sel1:
-                pygame.draw.rect(s, P_COLORS[0 if sel0 else 1], rr, 5, border_radius=18)
+                gd.rect(s, P_COLORS[0 if sel0 else 1], rr, 5, border_radius=18)
             else:
-                pygame.draw.rect(s, (70, 80, 120), rr, 2, border_radius=18)
+                gd.rect(s, (70, 80, 120), rr, 2, border_radius=18)
             img = A.big[i]
             if (sel0 and self.ready[0]) or (sel1 and self.ready[1]):
                 img = A.big_celeb[i]
@@ -999,18 +1023,18 @@ class SelectScene(Scene, OnlineMixin):
                 draw_text(s, lab, 12, (r.x + 14, y), (200, 210, 230), anchor="midleft", outline=1, title=False)
                 for k in range(5):
                     c = GOLD if k < val else (60, 70, 100)
-                    pygame.draw.rect(s, c, (r.x + 70 + k * 20, y - 5, 17, 10), 0, border_radius=3)
+                    gd.rect(s, c, (r.x + 70 + k * 20, y - 5, 17, 10), 0, border_radius=3)
             ic = A.icon_fire if sim.CHARACTERS[i]["power"] == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(r.right - 22, r.y + 22)))
             if sel0:
                 tag = pygame.Rect(0, 0, 112, 30)
                 tag.midbottom = (r.centerx - (30 if sel1 else 0), rr.y + 2)
-                pygame.draw.rect(s, P_COLORS[0], tag, 0, border_radius=10)
+                gd.rect(s, P_COLORS[0], tag, 0, border_radius=10)
                 draw_text(s, labels[0], 16, tag.center, outline=2)
             if sel1:
                 tag = pygame.Rect(0, 0, 112, 30)
                 tag.midbottom = (r.centerx + (30 if sel0 else 0), rr.y + 2 - (32 if sel0 else 0))
-                pygame.draw.rect(s, P_COLORS[1], tag, 0, border_radius=10)
+                gd.rect(s, P_COLORS[1], tag, 0, border_radius=10)
                 draw_text(s, labels[1], 16, tag.center, outline=2)
         # hazir durumu
         y = 540
@@ -1085,7 +1109,7 @@ class MatchScene(Scene, OnlineMixin):
         self.again = [False, False]
         self.over_t = 0.0
         self.me = 1 if mode == "client" else 0
-        self.frame = pygame.Surface((W, H))
+        self.frame = gfx.Canvas(pygame.Surface((int(W * gfx.K), int(H * gfx.K))))
         self.rings = []
         self.flashes = []
         self.ripple = None
@@ -1559,7 +1583,7 @@ class MatchScene(Scene, OnlineMixin):
             hgt = max(0.0, sim.GROUND - y)
             k = max(0.25, 1 - hgt / 420)
             sh = fx.soft_dot(int(wdt * k / 2) + 2, (0, 0, 0))
-            sh = pygame.transform.smoothscale(sh, (sh.get_width(), max(4, int(sh.get_height() * 0.28))))
+            sh = tf.smoothscale(sh, (sh.get_width(), max(4, int(sh.get_height() * 0.28))))
             sh.set_alpha(int(150 * k))
             s.blit(sh, sh.get_rect(center=(x, sim.GROUND + 3)))
             sh.set_alpha(255)
@@ -1569,7 +1593,7 @@ class MatchScene(Scene, OnlineMixin):
             if img and (life > 2 or int(self.t * 8) % 2 == 0):
                 bob = math.sin(self.t * 3) * 8
                 fx.blit_glow(s, px, py + bob, 62 + 6 * math.sin(self.t * 6), (110, 100, 50))
-                sp = pygame.transform.rotozoom(img, math.sin(self.t * 2.5) * 10, 1 + 0.05 * math.sin(self.t * 6))
+                sp = tf.rotozoom(img, math.sin(self.t * 2.5) * 10, 1 + 0.05 * math.sin(self.t * 6))
                 s.blit(sp, sp.get_rect(center=(px, py + bob)))
                 for k in range(3):
                     a = self.t * 2 + k * 2.09
@@ -1589,14 +1613,12 @@ class MatchScene(Scene, OnlineMixin):
         for x, y, r, col, life, mx in self.rings:
             k = 1 - life / mx
             rad = int(10 + r * k)
-            pygame.draw.circle(s, col, (int(x), int(y)), rad, max(1, int(5 * (1 - k))))
+            gd.circle(s, col, (int(x), int(y)), rad, max(1, int(5 * (1 - k))))
         for x, y, life in self.flashes:
             fx.blit_glow(s, x, y, 40 + life * 200, (255, 245, 220))
         if self.goal_flash > 0:
-            fl = pygame.Surface((W, H))
             v = int(110 * self.goal_flash / 0.35)
-            fl.fill((v, v, int(v * 0.8)))
-            s.blit(fl, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            s.add_full((v, v, int(v * 0.8)))
         s.blit(A.vignette, (0, 0))
         self._draw_hud(s, snap)
         ox = oy = 0
@@ -1614,7 +1636,7 @@ class MatchScene(Scene, OnlineMixin):
             rad = r if k % 2 == 0 else r * 0.35
             a = k * math.pi / 4
             pts.append((x + math.cos(a) * rad, y + math.sin(a) * rad))
-        pygame.draw.polygon(s, col, pts)
+        gd.polygon(s, col, pts)
 
     def _draw_particle(self, s, p):
         a = max(0.0, min(1.0, p.life / p.max))
@@ -1622,13 +1644,13 @@ class MatchScene(Scene, OnlineMixin):
         if k == "confetti":
             r = pygame.Rect(0, 0, p.size, int(p.size * 1.6 * abs(math.cos(math.radians(p.rot)))) + 1)
             r.center = (p.x, p.y)
-            pygame.draw.rect(s, p.color, r)
+            gd.rect(s, p.color, r)
         elif k == "shard":
             sz = p.size * (0.5 + 0.5 * a)
             pts = [(p.x + math.cos(math.radians(p.rot + j * 120)) * sz * (1.7 if j == 0 else 0.7),
                     p.y + math.sin(math.radians(p.rot + j * 120)) * sz * (1.7 if j == 0 else 0.7)) for j in range(3)]
-            pygame.draw.polygon(s, p.color, pts)
-            pygame.draw.polygon(s, (255, 255, 255), pts, 1)
+            gd.polygon(s, p.color, pts)
+            gd.polygon(s, (255, 255, 255), pts, 1)
         elif k == "flame":
             t = 1 - a
             if t < 0.3:
@@ -1645,12 +1667,12 @@ class MatchScene(Scene, OnlineMixin):
             img.set_alpha(255)
         elif k == "spark":
             ex, ey = p.x - p.vx * 0.035, p.y - p.vy * 0.035
-            pygame.draw.line(s, p.color, (p.x, p.y), (ex, ey), 2)
+            gd.line(s, p.color, (p.x, p.y), (ex, ey), 2)
         elif k == "snow":
             self._star(s, p.x, p.y, p.size * (0.4 + 0.6 * a) * (1 + 0.3 * math.sin(p.rot * 0.1)), p.color)
         else:
             rad = max(1, int(p.size * (0.4 + 0.6 * a)))
-            pygame.draw.circle(s, p.color, (int(p.x), int(p.y)), rad)
+            gd.circle(s, p.color, (int(p.x), int(p.y)), rad)
 
     def _draw_goal_back(self, s, snap):
         GD, GT, GR = sim.GOAL_D, sim.GOAL_TOP, sim.GROUND
@@ -1670,22 +1692,22 @@ class MatchScene(Scene, OnlineMixin):
                         dist = (GT + gy - rp[1]) / 70.0
                         off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2) * (0.3 + u)
                         pts.append((x0 + gx + d * off, GT + gy))
-                    pygame.draw.lines(s, (240, 240, 245), False, pts, 2)
+                    gd.lines(s, (240, 240, 245), False, pts, 2)
                 for gy in range(0, GR - GT, 14):
                     dist = (GT + gy - rp[1]) / 70.0
                     off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2)
-                    pygame.draw.line(s, (240, 240, 245), (x0, GT + gy), (x0 + GD + d * off * 0.3, GT + gy), 2)
+                    gd.line(s, (240, 240, 245), (x0, GT + gy), (x0 + GD + d * off * 0.3, GT + gy), 2)
             else:
                 s.blit(A.net_lines, (x0, GT))
         for x in (6, W - 6):
-            pygame.draw.line(s, (200, 200, 210), (x, GT), (x, GR), 6)
+            gd.line(s, (200, 200, 210), (x, GT), (x, GR), 6)
         for i in range(2):
             if snap["sh"][i] > 0:
                 x = sim.GOAL_D + 2 if i == 0 else W - sim.GOAL_D - 2
                 wall = pygame.Surface((26, GR - GT), pygame.SRCALPHA)
                 al = 140 if snap["sh"][i] > 1.5 or int(self.t * 10) % 2 else 60
                 wall.fill((140, 220, 255, al))
-                pygame.draw.line(wall, (255, 255, 255, 200), (6, 10), (6, GR - GT - 10), 2)
+                gd.line(wall, (255, 255, 255, 200), (6, 10), (6, GR - GT - 10), 2)
                 s.blit(wall, wall.get_rect(midtop=(x, GT)))
                 fx.blit_glow(s, x, GT + (GR - GT) / 2, 90, (30, 70, 100))
                 ice = self.app.assets.ice_block
@@ -1701,14 +1723,14 @@ class MatchScene(Scene, OnlineMixin):
             else:
                 roof = pygame.Rect(W - GD - 6, GT - RT, GD + 6, RT)
                 postx = W - GD
-            pygame.draw.rect(s, (30, 30, 40), roof.inflate(4, 4), 0, border_radius=6)
-            pygame.draw.rect(s, (245, 245, 250), roof, 0, border_radius=6)
-            pygame.draw.line(s, (255, 255, 255), (roof.x + 4, roof.y + 3), (roof.right - 4, roof.y + 3), 2)
-            pygame.draw.line(s, (30, 30, 40), (postx, GT - 2), (postx, GR), 12)
-            pygame.draw.line(s, (245, 245, 250), (postx, GT - 2), (postx, GR), 8)
-            pygame.draw.line(s, (255, 255, 255), (postx - 2, GT), (postx - 2, GR), 2)
+            gd.rect(s, (30, 30, 40), roof.inflate(4, 4), 0, border_radius=6)
+            gd.rect(s, (245, 245, 250), roof, 0, border_radius=6)
+            gd.line(s, (255, 255, 255), (roof.x + 4, roof.y + 3), (roof.right - 4, roof.y + 3), 2)
+            gd.line(s, (30, 30, 40), (postx, GT - 2), (postx, GR), 12)
+            gd.line(s, (245, 245, 250), (postx, GT - 2), (postx, GR), 8)
+            gd.line(s, (255, 255, 255), (postx - 2, GT), (postx - 2, GR), 2)
             for yy in (GT + 20, GT + 70, GT + 120, GT + 170):
-                pygame.draw.line(s, (230, 70, 70), (postx, yy), (postx, yy + 20), 8)
+                gd.line(s, (230, 70, 70), (postx, yy), (postx, yy + 20), 8)
 
     def _player_img(self, char, p, snap, i):
         """Duruma gore uygun pozu sec."""
@@ -1762,10 +1784,10 @@ class MatchScene(Scene, OnlineMixin):
             c = (130, 60, 10) if pw == "fire" else (30, 90, 130)
             fx.blit_glow(s, x, y - h * 0.5, 95 + 8 * math.sin(self.t * 12), c)
         if sx != 1.0 or sy != 1.0:
-            img = pygame.transform.smoothscale(img, (max(1, int(img.get_width() * sx)),
+            img = tf.smoothscale(img, (max(1, int(img.get_width() * sx)),
                                                      max(1, int(img.get_height() * sy))))
         if tilt:
-            img = pygame.transform.rotate(img, -tilt * (1 if not flip else -1))
+            img = tf.rotate(img, -tilt * (1 if not flip else -1))
         rect = img.get_rect()
         if pose == "kick":
             ax = A.kick_anchor[char]
@@ -1781,13 +1803,13 @@ class MatchScene(Scene, OnlineMixin):
             blk = pygame.Rect(0, 0, 96, int(h + 26))
             blk.midbottom = (int(x), int(y + 4))
             ice = pygame.Surface(blk.size, pygame.SRCALPHA)
-            pygame.draw.rect(ice, (150, 220, 255, 70), ice.get_rect(), 0, border_radius=14)
+            gd.rect(ice, (150, 220, 255, 70), ice.get_rect(), 0, border_radius=14)
             s.blit(img, rect)
             s.blit(ice, blk)
-            pygame.draw.rect(s, (220, 245, 255), blk, 3, border_radius=14)
-            pygame.draw.line(s, (255, 255, 255), (blk.x + 14, blk.y + 18), (blk.x + 30, blk.y + 60), 3)
-            pygame.draw.line(s, (255, 255, 255), (blk.x + 22, blk.y + 14), (blk.x + 34, blk.y + 38), 2)
-            pygame.draw.line(s, (200, 240, 255), (blk.right - 20, blk.bottom - 50), (blk.right - 10, blk.bottom - 20), 2)
+            gd.rect(s, (220, 245, 255), blk, 3, border_radius=14)
+            gd.line(s, (255, 255, 255), (blk.x + 14, blk.y + 18), (blk.x + 30, blk.y + 60), 3)
+            gd.line(s, (255, 255, 255), (blk.x + 22, blk.y + 14), (blk.x + 34, blk.y + 38), 2)
+            gd.line(s, (200, 240, 255), (blk.right - 20, blk.bottom - 50), (blk.right - 10, blk.bottom - 20), 2)
             ice2 = A.fx_ice
             s.blit(ice2, ice2.get_rect(center=(x, y - 20)))
             draw_text(s, "%.1f" % frozen, 20, (x, blk.y - 14), ICE_C, outline=3)
@@ -1798,7 +1820,7 @@ class MatchScene(Scene, OnlineMixin):
                 a = self.t * 8 + k * 2.1
                 self._star(s, x + math.cos(a) * 28, y - h - 8 + math.sin(a) * 8, 7, GOLD)
         if jump_t > 0:
-            pygame.draw.ellipse(s, (120, 255, 160), (x - 32, y - 7, 64, 14), 3)
+            gd.ellipse(s, (120, 255, 160), (x - 32, y - 7, 64, 14), 3)
         label = None
         if self.mode == "local2":
             label = "P%d" % (i + 1)
@@ -1806,7 +1828,7 @@ class MatchScene(Scene, OnlineMixin):
             label = "SEN"
         if label:
             ty = y - h - 30 + math.sin(self.t * 5) * 3 - bob
-            pygame.draw.polygon(s, P_COLORS[i], [(x - 9, ty + 10), (x + 9, ty + 10), (x, ty + 20)])
+            gd.polygon(s, P_COLORS[i], [(x - 9, ty + 10), (x + 9, ty + 10), (x, ty + 20)])
             draw_text(s, label, 18, (x, ty), P_COLORS[i], outline=3)
 
     def _draw_ball(self, s, b):
@@ -1818,13 +1840,13 @@ class MatchScene(Scene, OnlineMixin):
             fx.blit_glow(s, x, y, 80, (150, 70, 10) if mode == 1 else (40, 110, 160))
             trail = A.fx_fire if mode == 1 else A.fx_ice
             a = math.degrees(math.atan2(-dy, dx))
-            tr = pygame.transform.rotate(trail, a)
+            tr = tf.rotate(trail, a)
             L = trail.get_width() * 0.38
             s.blit(tr, tr.get_rect(center=(x + dx * L, y + dy * L)))
             img = A.ball_fire if mode == 1 else A.ball_ice
         else:
             img = A.ball
-        img = pygame.transform.rotate(img, -math.degrees(ang) % 360)
+        img = tf.rotate(img, -math.degrees(ang) % 360)
         if mode == 0 and sp > 750:
             k = min(1.0, (sp - 750) / 700)
             for j, al in ((3, 50), (2, 80), (1, 120)):
@@ -1848,8 +1870,8 @@ class MatchScene(Scene, OnlineMixin):
             tt, tc = "%d:%02d" % (sec // 60, sec % 60), (255, 90, 80) if sec <= 10 else WHITE
         timer = pygame.Rect(0, 0, 120 if not snap["gg"] else 150, 44)
         timer.center = (cx, board.centery)
-        pygame.draw.rect(s, (40, 46, 70), timer, 0, border_radius=12)
-        pygame.draw.rect(s, (90, 100, 140), timer, 2, border_radius=12)
+        gd.rect(s, (40, 46, 70), timer, 0, border_radius=12)
+        gd.rect(s, (90, 100, 140), timer, 2, border_radius=12)
         draw_text(s, tt, 28 if not snap["gg"] else 22, timer.center, tc, outline=2)
         draw_text(s, str(sc[0]), 50, (cx - 112, board.centery), WHITE, outline=4)
         draw_text(s, str(sc[1]), 50, (cx + 112, board.centery), WHITE, outline=4)
@@ -1862,10 +1884,10 @@ class MatchScene(Scene, OnlineMixin):
             px = board.left - 50 if i == 0 else board.right + 50
             circ = pygame.Rect(0, 0, 76, 76)
             circ.center = (px, board.centery)
-            pygame.draw.circle(s, P_COLORS[i], circ.center, 40)
-            pygame.draw.circle(s, (12, 16, 34), circ.center, 35)
+            gd.circle(s, P_COLORS[i], circ.center, 40)
+            gd.circle(s, (12, 16, 34), circ.center, 35)
             s.blit(por, por.get_rect(center=(px, board.centery + 2)))
-            pygame.draw.circle(s, GOLD, circ.center, 40, 3)
+            gd.circle(s, GOLD, circ.center, 40, 3)
             name = sim.DISPLAY_NAMES[char]
             if self.mode == "local2":
                 tag = "P%d" % (i + 1)
@@ -1886,7 +1908,7 @@ class MatchScene(Scene, OnlineMixin):
                 bar.midright = (px - 50, 62)
             else:
                 bar.midleft = (px + 50, 62)
-            pygame.draw.rect(s, (12, 16, 34), bar.inflate(6, 6), 0, border_radius=8)
+            gd.rect(s, (12, 16, 34), bar.inflate(6, 6), 0, border_radius=8)
             fill = bar.copy()
             fill.w = int(bw * meter / 100)
             if i == 1:
@@ -1894,8 +1916,8 @@ class MatchScene(Scene, OnlineMixin):
             full = meter >= 100 or armed > 0
             fc = col if not full else tuple(min(255, int(c * (1 + 0.3 * math.sin(self.t * 10)))) for c in col)
             if fill.w > 0:
-                pygame.draw.rect(s, fc, fill, 0, border_radius=6)
-            pygame.draw.rect(s, (230, 230, 240), bar.inflate(6, 6), 2, border_radius=8)
+                gd.rect(s, fc, fill, 0, border_radius=6)
+            gd.rect(s, (230, 230, 240), bar.inflate(6, 6), 2, border_radius=8)
             ic = A.icon_fire if pw == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(bar.left - 20 if i == 0 else bar.right + 20, bar.centery)))
             local = self.mode == "local2" or i == self.me
@@ -1930,9 +1952,7 @@ class MatchScene(Scene, OnlineMixin):
         if snap["ph"] == "ready" and snap["pt"] > 0 and self.banner is None:
             draw_text(s, str(int(math.ceil(snap["pt"]))), 80, (W // 2, 180), WHITE, outline=6)
         if snap["ph"] == "over":
-            dim = pygame.Surface((W, H), pygame.SRCALPHA)
-            dim.fill((5, 8, 20, 150))
-            s.blit(dim, (0, 0))
+            s.overlay((5, 8, 20, 150))
             win = snap["win"]
             if win == 2:
                 t, c = "BERABERE", WHITE
@@ -1950,7 +1970,7 @@ class MatchScene(Scene, OnlineMixin):
                 img = (A.big_celeb if win in (i,) else A.big)[snap["p"][i][9]]
                 if i == 1:
                     img = A.flipped(img)
-                img = pygame.transform.smoothscale(img, (int(img.get_width() * 0.62), int(img.get_height() * 0.62)))
+                img = tf.smoothscale(img, (int(img.get_width() * 0.62), int(img.get_height() * 0.62)))
                 s.blit(img, img.get_rect(midbottom=(W // 2 + (-230 if i == 0 else 230), 470)))
             draw_text(s, "%d  -  %d" % (sc[0], sc[1]), 84, (W // 2, 375), WHITE, outline=6)
             if self.mode in ("bot", "local2"):
@@ -1965,9 +1985,7 @@ class MatchScene(Scene, OnlineMixin):
                     hint = "Rakip rövanş istiyor!  ENTER: kabul"
             draw_text(s, hint, 24, (W // 2, 500), (220, 230, 250), outline=3, title=False)
         if self.paused:
-            dim = pygame.Surface((W, H), pygame.SRCALPHA)
-            dim.fill((5, 8, 20, 170))
-            s.blit(dim, (0, 0))
+            s.overlay((5, 8, 20, 170))
             draw_text(s, "DURAKLATILDI", 70, (W // 2, 280), GOLD, outline=6)
             draw_text(s, "ESC: devam     Q: ana menü", 28, (W // 2, 370), WHITE, outline=3, title=False)
         if self.quit_ask:
@@ -1981,15 +1999,18 @@ class App:
     def __init__(self):
         pygame.mixer.pre_init(22050, -16, 2, 512)
         pygame.init()
+        gfx.set_scale(self._pick_scale())
+        PW, PH = int(W * gfx.K), int(H * gfx.K)
         flags = pygame.SCALED | pygame.RESIZABLE
         try:
             # varsayilan: tam ekran (F11 ile pencereye gecilir)
-            self.screen = pygame.display.set_mode((W, H), flags | pygame.FULLSCREEN)
+            surf = pygame.display.set_mode((PW, PH), flags | pygame.FULLSCREEN)
         except pygame.error:
             try:
-                self.screen = pygame.display.set_mode((W, H), flags)
+                surf = pygame.display.set_mode((PW, PH), flags)
             except pygame.error:
-                self.screen = pygame.display.set_mode((W, H))
+                surf = pygame.display.set_mode((PW, PH))
+        self.screen = gfx.Canvas(surf)
         pygame.display.set_caption("Kafa Kafaya Futbol")
         try:
             pygame.display.set_icon(pygame.image.load(res("assets", "ball.png")))
@@ -2006,6 +2027,22 @@ class App:
         self.bot_level = 1
         self.scene = MenuScene(self)
 
+    @staticmethod
+    def _pick_scale():
+        """Ekran cozunurlugune gore cizim olcegi: 1280x720 -> 1.0, 1920x1080 -> 1.5."""
+        env = os.environ.get("KAFA_OLCEK")
+        if env:
+            try:
+                return max(0.5, min(2.0, float(env)))
+            except ValueError:
+                pass
+        try:
+            dw, dh = pygame.display.get_desktop_sizes()[0]
+        except Exception:
+            return 1.0
+        r = min(dw / W, dh / H)
+        return max(1.0, min(1.5, math.floor(r * 4) / 4))
+
     def go(self, scene):
         old = self.scene
         self.scene = scene
@@ -2019,6 +2056,10 @@ class App:
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
             for e in pygame.event.get():
+                if e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN) and gfx.K != 1.0:
+                    d = dict(e.dict)
+                    d["pos"] = (int(e.pos[0] / gfx.K), int(e.pos[1] / gfx.K))
+                    e = pygame.event.Event(e.type, d)
                 if e.type == pygame.QUIT:
                     self.running = False
                 elif e.type == pygame.KEYDOWN and e.key == pygame.K_F11:

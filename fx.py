@@ -5,6 +5,9 @@ import random
 
 import pygame
 
+import gfx
+from gfx import draw as gd
+
 TEAM = {
     "red": [(225, 60, 60), (250, 250, 250), (185, 35, 40)],
     "blue": [(60, 115, 225), (245, 245, 252), (35, 70, 165)],
@@ -20,15 +23,17 @@ _glow = {}
 
 
 def soft_dot(r, color):
-    """Yumusak kenarli renkli daire (normal alfa ile cizilir)."""
+    """Yumusak kenarli renkli daire (gfx.Img, normal alfa ile cizilir)."""
     r = max(1, int(r))
     key = (r, color)
     s = _soft.get(key)
     if s is None:
-        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        for i in range(r, 0, -1):
-            a = int(255 * (1 - i / r) ** 1.3) if i < r else 0
-            pygame.draw.circle(s, color + (max(0, min(255, a + 10)),), (r, r), i)
+        R = max(1, int(round(r * gfx.K)))
+        raw = pygame.Surface((R * 2, R * 2), pygame.SRCALPHA)
+        for i in range(R, 0, -1):
+            a = int(255 * (1 - i / R) ** 1.3) if i < R else 0
+            pygame.draw.circle(raw, color + (max(0, min(255, a + 10)),), (R, R), i)
+        s = gfx.Img(raw)
         _soft[key] = s
         if len(_soft) > 800:
             _soft.clear()
@@ -53,8 +58,14 @@ def glow(r, color):
 
 
 def blit_glow(target, x, y, r, color):
-    g = glow(r, color)
-    target.blit(g, (int(x - r), int(y - r)), special_flags=pygame.BLEND_RGB_ADD)
+    if isinstance(target, gfx.Canvas):
+        k = gfx.K
+        g = glow(r * k, color)
+        R = g.get_width() / 2
+        target.surf.blit(g, (int(x * k - R), int(y * k - R)), special_flags=pygame.BLEND_RGB_ADD)
+    else:
+        g = glow(r, color)
+        target.blit(g, (int(x - r), int(y - r)), special_flags=pygame.BLEND_RGB_ADD)
 
 
 def make_vignette(w, h, strength=95):
@@ -71,7 +82,10 @@ def make_vignette(w, h, strength=95):
 
 class Crowd:
     def __init__(self, res, width):
-        self.mask = pygame.image.load(res("assets", "crowd_mask.png")).convert_alpha()
+        k = gfx.K
+        self.k = k
+        mask = pygame.image.load(res("assets", "crowd_mask.png")).convert_alpha()
+        self.mask = pygame.transform.smoothscale(mask, (int(mask.get_width() * k), int(mask.get_height() * k)))
         self.oy = 95
         self.layer = pygame.Surface(self.mask.get_size(), pygame.SRCALPHA)
         with open(res("assets", "crowd.json"), encoding="utf-8") as f:
@@ -123,39 +137,48 @@ class Crowd:
         shirt = TEAM[col][shade]
         team = TEAM[col][0]
         sk = SKINS[skin]
-        base = pygame.Surface((22, 34), pygame.SRCALPHA)
+        Q = 3  # once 3 kat buyuk ciz, sonra kucult: kenarlar yumusak olur
+        base = pygame.Surface((22 * Q, 34 * Q), pygame.SRCALPHA)
         cx = 11
-        # kollar (arkada)
+
+        def P(x, y):
+            return (int(x * Q), int(y * Q))
+
+        def line(c, a_, b_, w):
+            pygame.draw.line(base, c, P(*a_), P(*b_), w * Q)
+
+        def circ(c, p, r):
+            pygame.draw.circle(base, c, P(*p), r * Q)
+
+        def rect(c, r, rad=0):
+            pygame.draw.rect(base, c, (r[0] * Q, r[1] * Q, r[2] * Q, r[3] * Q), 0, border_radius=rad * Q)
+
         if pose in (1, 2):
             for side in (-1, 1):
                 sx, sy = cx + side * 5, 20
                 ex, ey = cx + side * 9, 7 if pose == 1 else 6
-                pygame.draw.line(base, OUT, (sx, sy), (ex, ey), 5)
-                pygame.draw.line(base, shirt, (sx, sy), (ex, ey), 3)
-                pygame.draw.circle(base, OUT, (ex, ey), 3)
-                pygame.draw.circle(base, sk, (ex, ey), 2)
-        # govde
-        pygame.draw.rect(base, OUT, (cx - 7, 18, 14, 16), 0, border_radius=5)
-        pygame.draw.rect(base, shirt, (cx - 6, 19, 12, 15), 0, border_radius=4)
+                line(OUT, (sx, sy), (ex, ey), 5)
+                line(shirt, (sx, sy), (ex, ey), 3)
+                circ(OUT, (ex, ey), 3)
+                circ(sk, (ex, ey), 2)
+        rect(OUT, (cx - 7, 18, 14, 16), 5)
+        rect(shirt, (cx - 6, 19, 12, 15), 4)
         if shade == 1:
-            pygame.draw.line(base, team, (cx - 6, 24), (cx + 5, 24), 3)
-        # kafa
-        pygame.draw.circle(base, OUT, (cx, 13), 7)
-        if hair < 4:
-            pygame.draw.circle(base, HAIRS[hair], (cx, 12), 6)
-        else:
-            pygame.draw.circle(base, team, (cx, 12), 6)
-        pygame.draw.circle(base, sk, (cx, 14), 5)
+            line(team, (cx - 6, 24), (cx + 5, 24), 3)
+        circ(OUT, (cx, 13), 7)
+        circ(HAIRS[hair] if hair < 4 else team, (cx, 12), 6)
+        circ(sk, (cx, 14), 5)
+        # gozler
+        circ(OUT, (cx + 2, 14), 1)
         if hair == 4:
-            pygame.draw.rect(base, team, (cx - 6, 7, 12, 4), 0, border_radius=2)
-        # atki
+            rect(team, (cx - 6, 7, 12, 4), 2)
         if pose == 2:
-            pygame.draw.rect(base, OUT, (0, 2, 22, 7), 0, border_radius=2)
-            pygame.draw.rect(base, team, (1, 3, 20, 5))
+            rect(OUT, (0, 2, 22, 7), 2)
+            rect(team, (1, 3, 20, 5))
             for xx in range(3, 20, 6):
-                pygame.draw.rect(base, (250, 250, 250), (xx, 3, 2, 5))
-        if sc != 1:
-            base = pygame.transform.smoothscale(base, (max(1, round(22 * sc)), max(1, round(34 * sc))))
+                rect((250, 250, 250), (xx, 3, 2, 5))
+        ks = sc * self.k
+        base = pygame.transform.smoothscale(base, (max(1, round(22 * ks)), max(1, round(34 * ks))))
         self.sprites[k] = base
         return base
 
@@ -194,6 +217,7 @@ class Crowd:
 
     def draw(self, target):
         L = self.layer
+        k = self.k
         L.fill((0, 0, 0, 0))
         t = self.t
         ex = self.excite
@@ -212,15 +236,18 @@ class Crowd:
                 jump = max(jump, 9 * k)
                 pose = 1 if k > 0.3 else pose
             img = self._sprite(key, pose)
-            L.blit(img, (int(x - img.get_width() / 2), int(y - img.get_height() - jump)))
+            L.blit(img, (int(x * k - img.get_width() / 2), int((y - jump) * k - img.get_height())))
         L.blit(self.mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        target.blit(L, (0, self.oy))
+        if isinstance(target, gfx.Canvas):
+            target.surf.blit(L, (0, int(self.oy * k)))
+        else:
+            target.blit(L, (0, self.oy))
         # bayraklar (tribunun ustune tasar)
         for fl in self.flags:
             px, py, col, ph, sc, d = fl
             wave_amp = 2 + ex * 5
             top = py - 34 * sc - (abs(math.sin(t * 7 + ph)) * ex * 6)
-            pygame.draw.line(target, (60, 50, 50), (px, py + 10), (px, top), 2)
+            gd.line(target, (60, 50, 50), (px, py + 10), (px, top), 2)
             Lw, Hh = 34 * sc, 20 * sc
             pts_top, pts_bot = [], []
             for k in range(7):
@@ -229,11 +256,11 @@ class Crowd:
                 pts_top.append((px + d * Lw * u, top + off))
                 pts_bot.append((px + d * Lw * u, top + Hh + off))
             poly = pts_top + pts_bot[::-1]
-            pygame.draw.polygon(target, TEAM[col][0], poly)
+            gd.polygon(target, TEAM[col][0], poly)
             mid_t = [(x, y + Hh * 0.38) for x, y in pts_top]
             mid_b = [(x, y + Hh * 0.62) for x, y in pts_top]
-            pygame.draw.polygon(target, (250, 250, 250), mid_t + mid_b[::-1])
-            pygame.draw.lines(target, OUT, True, poly, 1)
+            gd.polygon(target, (250, 250, 250), mid_t + mid_b[::-1])
+            gd.lines(target, OUT, True, poly, 1)
         for x, y, life in self.flash:
             r = 5 + life * 30
             blit_glow(target, x, y + self.oy - 10, r, (255, 255, 235))

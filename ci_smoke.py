@@ -4,6 +4,7 @@ import random
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_AUDIODRIVER"] = "dummy"
+os.environ.setdefault("KAFA_OLCEK", "1.5")
 
 import pygame  # noqa: E402
 import main  # noqa: E402
