@@ -3175,17 +3175,28 @@ class MatchScene(Scene, OnlineMixin):
         top = int(y * k)
         pygame.draw.rect(surf, (10, 12, 22), (0, top - int(2 * k), int(W * k), int((h + 4) * k)))
         pygame.draw.rect(surf, (22, 26, 44), (0, top, int(W * k), int(h * k)))
-        strip = A._board_strip
-        sw = strip.get_width()
-        speed = 260 if goal else 70
-        off = int((self.t * speed * k) % sw)
-        x = -off
-        flash = goal and int(self.t * 6) % 2 == 0
-        while x < W * k:
-            surf.blit(strip, (x, top))
-            x += sw
-        if flash:
-            surf.fill((40, 32, 0), (0, top, int(W * k), int(h * k)), special_flags=pygame.BLEND_RGB_ADD)
+        # sabit panolar: reklamlar ekrana esit araliklarla dizilir, kaymaz/yanip sonmez
+        key2 = ("static", goal, h)
+        if getattr(A, "_board_static_key", None) != key2:
+            parts = ([("GOOOL!", GOLD)] * 5) if goal else ADS
+            imgs = [text_surf(t, int(h * 0.62), c, 0, title=True).hi for t, c in parts]
+            st = pygame.Surface((int(W * k), int(h * k)), pygame.SRCALPHA)
+            x0_ = 130 * k                       # kalelerin arkasina reklam koyma
+            cell = (st.get_width() - 2 * x0_) / len(imgs)
+            for i, im in enumerate(imgs):
+                if im.get_width() > cell - 16 * k:
+                    f_ = (cell - 16 * k) / im.get_width()
+                    im = pygame.transform.smoothscale(im, (max(1, int(im.get_width() * f_)),
+                                                           max(1, int(im.get_height() * f_))))
+                cx_ = int(x0_ + cell * (i + 0.5))
+                st.blit(im, im.get_rect(center=(cx_, st.get_height() // 2)))
+                if i > 0:
+                    lx_ = int(x0_ + cell * i)
+                    pygame.draw.line(st, (60, 80, 120), (lx_, int(3 * k)),
+                                     (lx_, st.get_height() - int(3 * k)), max(1, int(2 * k)))
+            A._board_static = st
+            A._board_static_key = key2
+        surf.blit(A._board_static, (0, top))
         surf.blit(A._board_led, (0, top))
         pygame.draw.line(surf, (120, 200, 255), (0, top), (int(W * k), top), max(1, int(k)))
 
