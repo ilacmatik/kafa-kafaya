@@ -26,6 +26,7 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
 - Karakter seçiminde H tuşu hava durumunu değiştirir (açık, yağmur, kar, rüzgar).
 - Berabere biten maç penaltılarla biter. Şut: yerden, şut+yukarı: üst köşe.
 - TURNUVA: 5 maçlık kupa yolu, sonunda kupa töreni.
+- Maça katılan PC kendini de solda görür (karakter seçiminde V tuşu ile değiştirilebilir).
 - Karakter seçiminde Y tuşu stadyumu değiştirir (Gece Arenası / Timsah Arena).
 
 

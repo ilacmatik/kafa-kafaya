@@ -80,6 +80,61 @@ def pick_weather(i):
     return random.choice(["clear", "rain", "snow", "wind"]) if w == "random" else w
 
 
+def _sw(v):
+    return [v[1], v[0]] if isinstance(v, list) and len(v) == 2 else v
+
+
+def mirror_snap(m):
+    """Istemci icin goruntuyu aynala: kendi oyuncun solda, rakip sagda."""
+    m = dict(m)
+    b = list(m["b"])
+    b[0] = W - b[0]
+    b[2] = -b[2]
+    b[4] = -b[4]
+    m["b"] = b
+    ps = []
+    for p in m["p"][::-1]:
+        q = list(p)
+        q[0] = W - q[0]
+        q[2] = -q[2]
+        q[3] = -q[3]
+        ps.append(q)
+    m["p"] = ps
+    for k in ("sc", "sh", "gl", "mg"):
+        if k in m:
+            m[k] = _sw(m[k])
+    if m.get("pu"):
+        pu = list(m["pu"])
+        pu[1] = W - pu[1]
+        m["pu"] = pu
+    if m.get("scr", -1) in (0, 1):
+        m["scr"] = 1 - m["scr"]
+    if m.get("win", -1) in (0, 1):
+        m["win"] = 1 - m["win"]
+    if "wd" in m:
+        m["wd"] = -m["wd"]
+    if m.get("pen"):
+        m["pen"] = [1 - m["pen"][0], m["pen"][1][::-1]]
+    if m.get("st"):
+        m["st"] = {k: _sw(v) for k, v in m["st"].items()}
+    if "ag" in m and m["ag"]:
+        m["ag"] = _sw(m["ag"])
+    evs = []
+    for ev in m.get("ev", []):
+        parts = ev.split(":")
+        n = parts[0]
+        if n in ("goal", "jump2", "shoulder", "bump", "bicycle", "pen_goal", "pen_miss", "magnet", "glove",
+                 "quake", "bolt") and len(parts) > 1:
+            parts[1] = str(1 - int(parts[1]))
+            if n == "bolt" and len(parts) > 2:
+                parts[2] = str(int(W - int(parts[2])))
+        elif n == "pu" and len(parts) > 2:
+            parts[2] = str(1 - int(parts[2]))
+        evs.append(":".join(parts))
+    m["ev"] = evs
+    return m
+
+
 def record_path():
     return os.path.join(os.path.expanduser("~"), "kafakafaya_kayit.json")
 
@@ -1440,6 +1495,12 @@ class SelectScene(Scene, OnlineMixin):
                 self.app.sound.play("click")
                 if self.conn:
                     self.conn.send({"t": "dur", "d": self.dur})
+            if k == pygame.K_v and self.mode == "client":
+                self.app.mirror = not self.app.mirror
+                rec = load_record()
+                rec["mirror"] = self.app.mirror
+                save_record(rec)
+                self.app.sound.play("click")
             if k == pygame.K_h and self.mode != "client":
                 self.app.weather = (self.app.weather + 1) % len(WEATHERS)
                 self.app.sound.play("click")
@@ -1622,7 +1683,8 @@ class SelectScene(Scene, OnlineMixin):
         elif self.mode == "bot":
             hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum · H hava"
         else:
-            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else "")
+            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else
+                                             " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
         panel(s, (W // 2 - 420, 640, 840, 64), (8, 12, 28, 190), 18)
         draw_text(s, hint, 19, (W // 2, 660), (225, 232, 250), outline=2, title=False)
         draw_text(s, "Fare ile karaktere tıklayarak da seçebilirsin   ·   ESC: geri", 15, (W // 2, 688),
@@ -1683,6 +1745,10 @@ class MatchScene(Scene, OnlineMixin):
         self.again = [False, False]
         self.over_t = 0.0
         self.me = 1 if mode == "client" else 0
+        self.mirror = mode == "client" and app.mirror
+        if self.mirror:
+            self.me = 0
+            self.chars = self.chars[::-1]
         self.frame = gfx.Canvas(pygame.Surface((int(W * gfx.K), int(H * gfx.K))))
         self.rings = []
         self.flashes = []
@@ -1866,6 +1932,8 @@ class MatchScene(Scene, OnlineMixin):
 
     def _update_client(self, dt):
         h = self._held(KEYS_SOLO)
+        if self.mirror:
+            h["l"], h["r"] = h["r"], h["l"]
         self.conn.send({"t": "in", "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
                         "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"]),
                         "o": self.counts[1][2]})
@@ -1875,6 +1943,8 @@ class MatchScene(Scene, OnlineMixin):
         for i, m in enumerate(msgs):
             t = m.get("t")
             if t == "st":
+                if self.mirror:
+                    m = mirror_snap(m)
                 self.snaps.append((now, m))
                 self._process(m)
                 ag = m.get("ag")
@@ -3356,6 +3426,7 @@ class App:
         ASSETS = self.assets
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
+        self.mirror = load_record().get("mirror", True)
         self.weather = 0
         self.sound = Sound()
         self.clock = pygame.time.Clock()
