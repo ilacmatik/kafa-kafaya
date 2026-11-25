@@ -518,6 +518,8 @@ class Sound:
         for k, f in enumerate((523, 659, 784, 1046)):
             fan += mul(bell([f, f * 2], 0.16 if k < 3 else 0.6, 3), [1] * n(0.16 if k < 3 else 0.6))
         s["golden"] = self._mk(fan, 0.5)
+        crack = [((rnd.random() * 2 - 1) * (1 - i / n(0.5)) ** 2 if rnd.random() < 0.08 else 0.0) for i in range(n(0.5))]
+        s["pop"] = self._mk(mix((thump(420, 90, 0.18, 0.9), 1), (crack, 0.9)), 0.5)
 
     def play(self, name, gap=0.05, vol=1.0):
         if not self.ok or self.muted or self.hidden or name not in self.snd:
@@ -664,7 +666,9 @@ class Assets:
         self.power_icon = {k: picon(a, b, 32) for k, (a, b) in pmap.items()}
         self.power_icon_small = {k: picon(a, b, 28) for k, (a, b) in pmap.items()}
         self.fx_art = {}
-        for n in ("fx_glove", "fx_bolt", "fx_quake", "fx_magnet", "fx_flash", "fx_dust", "fx_spark", "fx_stars"):
+        for n in ("fx_glove", "fx_bolt", "fx_quake", "fx_magnet", "fx_flash", "fx_dust", "fx_spark", "fx_stars",
+                  "fx_confetti", "fx_fw_gold", "fx_fw_red", "fx_fw_blue", "fx_str_red", "fx_str_gold",
+                  "fx_str_blue", "fx_str_white", "fx_starburst", "fx_star", "fx_ring"):
             if os.path.exists(res("assets", n + ".png")):
                 self.fx_art[n] = L(n + ".png")
         self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
@@ -1585,7 +1589,8 @@ class MatchScene(Scene, OnlineMixin):
         self.goal_line = None
         self.bolts = []
         self.quakes = []
-        self.pops = []   # [gorsel, x, y, boy, omur]
+        self.pops = []   # [gorsel, x, y, boy, omur(, maks)]
+        self.fw_queue = []
         self.last_count = None
         self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
         self.stad = app.stadium if 0 <= app.stadium < len(STADIUMS) else 0
@@ -1964,6 +1969,20 @@ class MatchScene(Scene, OnlineMixin):
                 else:
                     msg = "RAKİP ATTI"
                 self._say("GOOOL!", GOLD, 2.4)
+                # Gemini kutlama efektleri
+                gx2 = W - 70 if who == 0 else 70
+                self.pops.append(["fx_confetti", gx2, sim.GOAL_TOP + 40, 230, 1.1, 1.1])
+                self.pops.append(["fx_starburst", gx2, sim.GOAL_TOP + 80, 200, 0.5, 0.5])
+                self.pops.append(["fx_ring", gx2, sim.GOAL_TOP + 80, 160, 0.6, 0.6])
+                for k in range(7):
+                    self.fw_queue.append([0.15 + k * 0.28, random.uniform(160, W - 160), random.uniform(90, 250),
+                                          random.choice(["fx_fw_gold", "fx_fw_red", "fx_fw_blue"])])
+                for _ in range(26):
+                    self.parts.append(Particle(random.uniform(0, W), random.uniform(-80, 40), random.uniform(-40, 40),
+                                               random.uniform(40, 120), random.uniform(2.2, 3.2),
+                                               random.choice(["fx_str_red", "fx_str_gold", "fx_str_blue",
+                                                              "fx_str_white", "fx_star"]),
+                                               random.uniform(22, 34), 40, "img"))
                 self.floaters.append([msg, W // 2, 292, 2.2, P_COLORS[who]])
                 self.shake = 0.5
                 self.ripple = [1 if who == 0 else 0, by, 0.0]
@@ -2041,6 +2060,9 @@ class MatchScene(Scene, OnlineMixin):
                 p.vx *= (1 - 2.0 * dt)
                 p.vy = min(p.vy, 140)
                 p.vx += math.sin(p.rot * 0.05) * 30 * dt
+            elif p.kind == "img":
+                p.vx += math.sin(p.life * 3 + p.rot * 0.01) * 40 * dt
+                p.rot -= p.vr * dt * 0.75
             elif p.kind in ("smoke", "snow"):
                 p.vx *= (1 - 2.5 * dt)
                 p.vy *= (1 - 2.5 * dt) if p.kind == "snow" else 1
@@ -2065,6 +2087,12 @@ class MatchScene(Scene, OnlineMixin):
         for q in self.bolts + self.quakes:
             q[1] -= dt
         self.bolts = [q for q in self.bolts if q[1] > 0]
+        for q in self.fw_queue:
+            q[0] -= dt
+            if q[0] <= 0:
+                self.pops.append([q[3], q[1], q[2], random.uniform(150, 220), 0.9, 0.9])
+                self.app.sound.play("pop" if "pop" in self.app.sound.snd else "kick", 0.05, 0.5)
+        self.fw_queue = [q for q in self.fw_queue if q[0] > 0]
         for q in self.pops:
             q[4] -= dt
         self.pops = [q for q in self.pops if q[4] > 0]
@@ -2191,10 +2219,14 @@ class MatchScene(Scene, OnlineMixin):
                 gd.circle(s, (200, 130, 255), (b[0], b[1]), 36 + 4 * math.sin(self.t * 12), 3)
         self._draw_ball(s, b)
         self._draw_goal_front(s, snap)
-        for name_, px_, py_, sz, life in self.pops:
+        for q in self.pops:
+            name_, px_, py_, sz, life = q[:5]
             img = A.fx(name_, sz)
             if img is not None:
-                k_ = 1 + (0.6 - min(0.6, life)) * 0.8
+                if len(q) > 5:
+                    k_ = 0.35 + 0.85 * min(1.0, (1 - life / q[5]) * 2.2)
+                else:
+                    k_ = 1 + (0.6 - min(0.6, life)) * 0.8
                 im2 = tf.rotozoom(img, 0, k_) if name_ != "fx_dust" else img
                 im2.set_alpha(int(255 * min(1, life * 3)))
                 s.blit(im2, im2.get_rect(center=(px_, py_)))
@@ -2285,6 +2317,14 @@ class MatchScene(Scene, OnlineMixin):
     def _draw_particle(self, s, p):
         a = max(0.0, min(1.0, p.life / p.max))
         k = p.kind
+        if k == "img":
+            img = self.app.assets.fx(p.color, p.size)
+            if img is not None:
+                r_ = tf.rotate(img, p.rot % 360)
+                if a < 0.3:
+                    r_.set_alpha(int(255 * a / 0.3))
+                s.blit(r_, r_.get_rect(center=(p.x, p.y)))
+            return
         if k == "confetti":
             r = pygame.Rect(0, 0, p.size, int(p.size * 1.6 * abs(math.cos(math.radians(p.rot)))) + 1)
             r.center = (p.x, p.y)
