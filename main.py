@@ -1526,6 +1526,10 @@ class SelectScene(Scene, OnlineMixin):
                 self.conn.send({"t": "wx", "w": app.weather})
         self.cards = [pygame.Rect(cx - 90, 350, 180, 300) for cx in PODIUMS]
         self.anim = [[-1, 0.0], [-1, 0.0]]
+        self.rolling = [0.0, 0.0]
+        self.roll_tick = [0.0, 0.0]
+        self.rand_rect = pygame.Rect(0, 0, 170, 28)
+        self.rand_rect.center = (W // 2, 323)
         self.stad_rect = pygame.Rect(0, 0, 230, 26)
         self.stad_rect.center = (W // 2, 262)
         self.wx_rect = pygame.Rect(0, 0, 200, 24)
@@ -1558,7 +1562,23 @@ class SelectScene(Scene, OnlineMixin):
         if who == self.me:
             self._send_pick()
 
+    def _locals(self):
+        if self.mode == "local2":
+            return [0, 1]
+        return [self.me]
+
+    def _random(self, who=None):
+        for w_ in ([who] if who is not None else self._locals()):
+            if not self.ready[w_]:
+                self.rolling[w_] = 0.75
+
     def handle(self, e):
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_r:
+            self._random()
+            return
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.rand_rect.collidepoint(e.pos):
+            self._random()
+            return
         if e.type == pygame.KEYDOWN:
             k = e.key
             if k == pygame.K_ESCAPE:
@@ -1643,6 +1663,19 @@ class SelectScene(Scene, OnlineMixin):
         self.t += dt
         for a in self.anim:
             a[1] = min(1.5, a[1] + dt * 1.6)
+        for w_ in (0, 1):
+            if self.rolling[w_] > 0:
+                self.rolling[w_] -= dt
+                self.roll_tick[w_] -= dt
+                if self.roll_tick[w_] <= 0 or self.rolling[w_] <= 0:
+                    self.roll_tick[w_] = 0.07
+                    old = self.pick[w_]
+                    self.pick[w_] = random.choice([c for c in range(6) if c != old])
+                    self.app.sound.play("click", 0.02)
+                    if self.rolling[w_] <= 0:
+                        self.app.sound.play("kick")
+                        if w_ == self.me and self.conn:
+                            self._send_pick()
         if self.conn:
             if not self.online_tick(dt):
                 return
@@ -1738,6 +1771,9 @@ class SelectScene(Scene, OnlineMixin):
         pill(s, stp, (30, 120, 60) if self.app.stadium == 1 else (40, 60, 130), radius=12)
         draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 14,
                   (stp.centerx, stp.centery - 1), WHITE, outline=2)
+        rr_ = self.rand_rect
+        pill(s, rr_, (150, 60, 170), radius=12)
+        draw_text(s, "RASTGELE  (R)", 14, (rr_.centerx, rr_.centery - 1), WHITE, outline=2)
         wxr = self.wx_rect
         wcol = {"clear": (200, 140, 30), "rain": (50, 90, 160), "snow": (120, 150, 190), "wind": (60, 140, 150),
                 "random": (110, 70, 160)}[WEATHERS[self.app.weather][0]]
@@ -1781,7 +1817,7 @@ class SelectScene(Scene, OnlineMixin):
         else:
             hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava" if self.mode == "host" else
                                              " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
-        draw_text(s, hint + "   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
+        draw_text(s, hint + "   ·   R rastgele   ·   ESC geri", 15, (W // 2, 700), (205, 215, 240), outline=2, title=False)
 
 
 # ====================================================================== mac
