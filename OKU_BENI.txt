@@ -23,6 +23,7 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Maç listede otomatik görünür. Görünmezse 1. PC'nin ekranındaki
   IP adresini yazıp ENTER'a basın.
 - İkiniz de karakter seçip ENTER'a basınca maç başlar.
+- Karakter seçiminde Y tuşu stadyumu değiştirir (Gece Arenası / Timsah Arena).
 
 
 3) KONTROLLER

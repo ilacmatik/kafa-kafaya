@@ -39,6 +39,15 @@ STEP = 1.0 / 60
 VERSION = 1
 DURATIONS = [60, 90, 120, 180]
 LEVELS = ["KOLAY", "NORMAL", "ZOR"]
+STADIUMS = [
+    {"name": "GECE ARENASI", "bg": "stadium_night_clean.jpg", "crowd": "crowd_night.json",
+     "mask": "crowd_mask_night.png", "light": 0.82,
+     "lamps": ((90, 80), (435, 194), (851, 194), (1180, 80)), "boards": None},
+    {"name": "TİMSAH ARENA", "bg": "stadium_timsah_clean.jpg", "crowd": "crowd_timsah.json",
+     "mask": "crowd_mask_timsah.png", "light": 0.95, "lamps": (), "boards": (527, 24)},
+]
+ADS = [("ULUDAĞ GAZOZ", (255, 214, 60)), ("MATLI", (255, 120, 90)), ("TURKCELL", (255, 205, 40)),
+       ("ÖZDİLEK", (255, 255, 255)), ("KÖFTECİ YUSUF", (255, 90, 80))]
 PODIUMS = [158, 352, 545, 735, 927, 1122]   # karakter secim podyumlari (x)
 
 GOLD = (255, 205, 60)
@@ -486,10 +495,14 @@ class Assets:
         def scaled(raw, f):
             return S(raw, raw.get_width() * f, raw.get_height() * f)
 
-        st = pygame.transform.smoothscale(pygame.image.load(res("assets", "stadium_night_clean.jpg")).convert(),
-                                          (int(W * gfx.K), int(H * gfx.K)))
-        st.blit(fx.make_vignette(st.get_width(), st.get_height(), 80), (0, 0))  # vinyet arka plana gomulu
-        self.stadium = gfx.Img(st)
+        self.stadiums = []
+        vig = fx.make_vignette(int(W * gfx.K), int(H * gfx.K), 80)
+        for sd in STADIUMS:
+            st = pygame.transform.smoothscale(pygame.image.load(res("assets", sd["bg"])).convert(),
+                                              (int(W * gfx.K), int(H * gfx.K)))
+            st.blit(vig, (0, 0))  # vinyet arka plana gomulu
+            self.stadiums.append(gfx.Img(st))
+        self.board_strip = None
         self._shadow = {}
         GD, GH = sim.GOAL_D, sim.GROUND - sim.GOAL_TOP
         k = gfx.K
@@ -1234,6 +1247,11 @@ class SelectScene(Scene, OnlineMixin):
                 self.app.sound.play("click")
                 if self.conn:
                     self.conn.send({"t": "dur", "d": self.dur})
+            if k == pygame.K_y and self.mode != "client":
+                self.app.stadium = (self.app.stadium + 1) % len(STADIUMS)
+                self.app.sound.play("click")
+                if self.conn:
+                    self.conn.send({"t": "stad", "s": self.app.stadium})
             if k == pygame.K_z and self.mode == "bot":
                 self.level = (self.level + 1) % 3
                 self.app.bot_level = self.level
@@ -1270,7 +1288,10 @@ class SelectScene(Scene, OnlineMixin):
                     self.conn.close()
                     self.app.go(MessageScene(self.app, "RAKİP ÇIKTI", "Diğer oyuncu oyundan ayrıldı."))
                     return
+                elif t == "stad":
+                    self.app.stadium = m.get("s", 0) % len(STADIUMS)
                 elif t == "start" and self.mode == "client":
+                    self.app.stadium = m.get("st", 0) % len(STADIUMS)
                     self.app.go(MatchScene(self.app, "client", m["c"], m["dur"], conn=self.conn,
                                            pending=msgs[i + 1:]))
                     return
@@ -1279,7 +1300,7 @@ class SelectScene(Scene, OnlineMixin):
         elif self.mode in ("local2",) and all(self.ready):
             self.app.go(MatchScene(self.app, "local2", self.pick, self.dur))
         elif self.mode == "host" and all(self.ready):
-            self.conn.send({"t": "start", "c": self.pick, "dur": self.dur})
+            self.conn.send({"t": "start", "c": self.pick, "dur": self.dur, "st": self.app.stadium})
             self.app.go(MatchScene(self.app, "host", self.pick, self.dur, conn=self.conn))
 
     def draw(self, s):
@@ -1337,7 +1358,12 @@ class SelectScene(Scene, OnlineMixin):
         fx.blit_glow(s, W // 2, 160, 90, (70, 50, 10))
         draw_text(s, "VS", 78, (W // 2, 160 + vs_bob), GOLD, outline=6)
         draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 18,
-                  (W // 2, 232), (215, 225, 245), outline=2, title=False)
+                  (W // 2, 226), (215, 225, 245), outline=2, title=False)
+        stp = pygame.Rect(0, 0, 250, 30)
+        stp.center = (W // 2, 258)
+        pill(s, stp, (30, 120, 60) if self.app.stadium == 1 else (40, 60, 130), radius=12)
+        draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 15,
+                  (stp.centerx, stp.centery - 1), WHITE, outline=2)
         # podyumlar ve karakterler
         for i, cx in enumerate(PODIUMS):
             sel0, sel1 = self.pick[0] == i, self.pick[1] == i
@@ -1368,11 +1394,11 @@ class SelectScene(Scene, OnlineMixin):
                 pill(s, tag, P_COLORS[who], radius=11)
                 draw_text(s, lab, 15, (tag.centerx, tag.centery - 1), WHITE, outline=2)
         if self.mode == "local2":
-            hint = "1. oyuncu: A/D seç, BOŞLUK hazır    ·    2. oyuncu: ←/→ seç, ENTER hazır"
+            hint = "1. oyuncu: A/D seç, BOŞLUK hazır  ·  2. oyuncu: ←/→ seç, ENTER hazır  ·  Y stadyum"
         elif self.mode == "bot":
-            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip karakteri · Z zorluk · T süre"
+            hint = "←/→ seç · ENTER hazır · ↑/↓ rakip · Z zorluk · T süre · Y stadyum"
         else:
-            hint = "←/→ seç · ENTER hazır" + (" · T süre" if self.mode == "host" else "")
+            hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum" if self.mode == "host" else "")
         panel(s, (W // 2 - 420, 640, 840, 64), (8, 12, 28, 190), 18)
         draw_text(s, hint, 19, (W // 2, 660), (225, 232, 250), outline=2, title=False)
         draw_text(s, "Fare ile karaktere tıklayarak da seçebilirsin   ·   ESC: geri", 15, (W // 2, 688),
@@ -1435,7 +1461,9 @@ class MatchScene(Scene, OnlineMixin):
         self.goal_line = None
         self.last_count = None
         self.pstate = [{"og": None, "sq": 0.0, "st": 0.0, "fz": 0.0} for _ in range(2)]
-        app.crowd.excite = app.crowd.target = 0.15
+        self.stad = app.stadium if 0 <= app.stadium < len(STADIUMS) else 0
+        self.crowd = app.crowds[self.stad]
+        self.crowd.excite = self.crowd.target = 0.15
         app.sound.ambience(True)
         if self.world:
             self.snap = self.world.snapshot()
@@ -1550,7 +1578,7 @@ class MatchScene(Scene, OnlineMixin):
                     return
             self.pending = []
             if w.phase == "over" and all(self.again):
-                self.conn.send({"t": "start", "c": self.chars, "dur": self.dur})
+                self.conn.send({"t": "start", "c": self.chars, "dur": self.dur, "st": self.app.stadium})
                 self.app.go(MatchScene(self.app, "host", self.chars, self.dur, conn=self.conn))
                 return
         if self.paused:
@@ -1601,6 +1629,7 @@ class MatchScene(Scene, OnlineMixin):
                 if ag:
                     self.again = [bool(ag[0]), bool(ag[1])]
             elif t == "start":
+                self.app.stadium = m.get("st", 0) % len(STADIUMS)
                 self.app.go(MatchScene(self.app, "client", m["c"], m["dur"], conn=self.conn, pending=msgs[i + 1:]))
                 return
             elif t == "select":
@@ -1665,7 +1694,7 @@ class MatchScene(Scene, OnlineMixin):
 
     def _process(self, snap):
         snd = self.app.sound
-        crowd = self.app.crowd
+        crowd = self.crowd
         bx, by = snap["b"][0], snap["b"][1]
         ph = snap["ph"]
         if ph != self.prev_phase:
@@ -1711,7 +1740,7 @@ class MatchScene(Scene, OnlineMixin):
                 self._ring(bx, by, 70, GOLD, 0.3)
                 self.flashes.append([bx, by, 0.15])
                 self.shake = max(self.shake, 0.2)
-                self.app.crowd.kick(0.5)
+                self.crowd.kick(0.5)
             elif name == "kick_hard":
                 snd.play("fire_hit", 0.1, 0.6)
                 self._ring(bx, by, 90, (255, 230, 150), 0.3)
@@ -1839,7 +1868,7 @@ class MatchScene(Scene, OnlineMixin):
         self.shake = max(self.shake, snap.get("shk", 0) or 0)
 
     def _update_fx(self, dt):
-        self.app.crowd.update(dt)
+        self.crowd.update(dt)
         for p in self.parts:
             p.vy += p.g * dt
             if p.kind == "confetti":
@@ -1930,9 +1959,12 @@ class MatchScene(Scene, OnlineMixin):
     def draw(self, screen):
         A = self.app.assets
         s = self.frame
-        s.blit(A.stadium, (0, 0))
-        self.app.crowd.draw(s)
-        for i, (lx, ly) in enumerate(((90, 80), (435, 194), (851, 194), (1180, 80))):
+        s.blit(A.stadiums[self.stad], (0, 0))
+        self.crowd.draw(s)
+        sd = STADIUMS[self.stad]
+        if sd["boards"]:
+            self._draw_boards(s, sd["boards"], self.snap)
+        for i, (lx, ly) in enumerate(sd["lamps"]):
             fx.blit_glow(s, lx, ly, 95 + 8 * math.sin(self.t * 2 + i), (110, 110, 120))
         snap = self.snap
         if snap is None:
@@ -1988,6 +2020,49 @@ class MatchScene(Scene, OnlineMixin):
         screen.fill((0, 0, 0))
         screen.blit(s, (ox, oy))
         self._draw_overlays(screen, snap)
+
+    def _draw_boards(self, s, spec, snap):
+        """Saha kenarindaki LED reklam panolari: kayan yazilar, golde GOOOL."""
+        y, h = spec
+        k = gfx.K
+        A = self.app.assets
+        goal = snap is not None and snap.get("ph") == "goal"
+        key = ("goal" if goal else "ads", h)
+        if getattr(A, "_board_key", None) != key:
+            parts = ([("GOOOL!", GOLD)] * 6) if goal else ADS
+            imgs = [text_surf(t, int(h * 0.62), c, 0, title=True) for t, c in parts]
+            gap = int(70 * k)
+            tw = sum(i.hi.get_width() for i in imgs) + gap * len(imgs)
+            strip = pygame.Surface((tw, int(h * k)), pygame.SRCALPHA)
+            x = 0
+            for im in imgs:
+                strip.blit(im.hi, (x, (strip.get_height() - im.hi.get_height()) // 2))
+                x += im.hi.get_width()
+                pygame.draw.circle(strip, (90, 200, 255), (x + gap // 2, strip.get_height() // 2), max(2, int(3 * k)))
+                x += gap
+            A._board_strip = strip
+            A._board_key = key
+            led = pygame.Surface((int(W * k), int(h * k)), pygame.SRCALPHA)
+            for yy in range(0, led.get_height(), max(2, int(3 * k))):
+                pygame.draw.line(led, (0, 0, 0, 70), (0, yy), (led.get_width(), yy))
+            A._board_led = led
+        surf = s.surf
+        top = int(y * k)
+        pygame.draw.rect(surf, (10, 12, 22), (0, top - int(2 * k), int(W * k), int((h + 4) * k)))
+        pygame.draw.rect(surf, (22, 26, 44), (0, top, int(W * k), int(h * k)))
+        strip = A._board_strip
+        sw = strip.get_width()
+        speed = 260 if goal else 70
+        off = int((self.t * speed * k) % sw)
+        x = -off
+        flash = goal and int(self.t * 6) % 2 == 0
+        while x < W * k:
+            surf.blit(strip, (x, top))
+            x += sw
+        if flash:
+            surf.fill((40, 32, 0), (0, top, int(W * k), int(h * k)), special_flags=pygame.BLEND_RGB_ADD)
+        surf.blit(A._board_led, (0, top))
+        pygame.draw.line(surf, (120, 200, 255), (0, top), (int(W * k), top), max(1, int(k)))
 
     @staticmethod
     def _star(s, x, y, r, col):
@@ -2380,7 +2455,8 @@ class App:
         self.assets = Assets()
         global ASSETS
         ASSETS = self.assets
-        self.crowd = fx.Crowd(res, W)
+        self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
+        self.stadium = 0
         self.sound = Sound()
         self.clock = pygame.time.Clock()
         self.running = True

@@ -52,7 +52,9 @@ w.time_left = 0.01
 w.score = [2, 1]
 run(app, m, 120)
 assert m.snap["ph"] == "over", m.snap["ph"]
+app.stadium = 1
 run(app, main.MatchScene(app, "local2", [2, 3], 60), 600, keys=True)
+app.stadium = 0
 hw = main.HostWaitScene(app)
 run(app, hw, 30)
 jw = main.JoinScene(app)
