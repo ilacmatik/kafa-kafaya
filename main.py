@@ -505,6 +505,18 @@ class Assets:
         for y in range(0, GH, 14):
             pygame.draw.line(nl, (240, 240, 245, 170), (0, y * k), (GD * k, y * k), lw)
         self.net_lines = gfx.Img(nl)
+        # Gemini kale cizimi: on direk ic yuzu x=660, ust direk alti y=104, zemin y=598 (kaynak piksel)
+        ga = pygame.image.load(res("assets", "goal_art.png")).convert_alpha()
+        gp = pygame.image.load(res("assets", "goal_post.png")).convert_alpha()
+        sy = (sim.GROUND - sim.GOAL_TOP) / (598 - 104)
+        sx = 0.24
+        self.goal_sx, self.goal_sy = sx, sy
+        self.goal_back = gfx.from_surface(ga, (ga.get_width() * sx, ga.get_height() * sy))
+        self.goal_front = gfx.from_surface(gp, (gp.get_width() * sx, gp.get_height() * sy))
+        self.goal_back_r = tf.flip(self.goal_back, True, False)
+        self.goal_front_r = tf.flip(self.goal_front, True, False)
+        self.goal_pos = (sim.GOAL_D - 660 * sx, sim.GOAL_TOP - 104 * sy)          # sol kale sol-ust
+        self.goal_post_x = sim.GOAL_D + (648 - 660) * sx
         mb = pygame.transform.smoothscale(pygame.image.load(res("assets", "menu_bg.jpg")).convert(),
                                           (int(W * k), int(H * k)))
         self.menu_bg = gfx.Img(mb)
@@ -2023,32 +2035,21 @@ class MatchScene(Scene, OnlineMixin):
             gd.circle(s, p.color, (int(p.x), int(p.y)), rad)
 
     def _draw_goal_back(self, s, snap):
-        GD, GT, GR = sim.GOAL_D, sim.GOAL_TOP, sim.GROUND
+        GT, GR = sim.GOAL_TOP, sim.GROUND
         A = self.app.assets
         rp = self.ripple
+        gx, gy = A.goal_pos
         for side in (0, 1):
-            x0 = 0 if side == 0 else W - GD
-            s.blit(A.net_shade, (x0, GT))
+            off = 0.0
             if rp and rp[0] == side:
-                t = rp[2]
-                amp = 16 * math.exp(-t * 3.2)
-                d = -1 if side == 0 else 1
-                for gx in range(0, GD + 1, 14):
-                    u = gx / GD if side == 1 else 1 - gx / GD
-                    pts = []
-                    for gy in range(0, GR - GT + 1, 10):
-                        dist = (GT + gy - rp[1]) / 70.0
-                        off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2) * (0.3 + u)
-                        pts.append((x0 + gx + d * off, GT + gy))
-                    gd.lines(s, (240, 240, 245), False, pts, 2)
-                for gy in range(0, GR - GT, 14):
-                    dist = (GT + gy - rp[1]) / 70.0
-                    off = amp * math.exp(-dist * dist) * math.cos(t * 18 - abs(dist) * 2)
-                    gd.line(s, (240, 240, 245), (x0, GT + gy), (x0 + GD + d * off * 0.3, GT + gy), 2)
+                off = 5 * math.exp(-rp[2] * 4) * math.sin(rp[2] * 40) * (-1 if side == 0 else 1)
+            if side == 0:
+                img = A.goal_back
+                x = gx + off
             else:
-                s.blit(A.net_lines, (x0, GT))
-        for x in (6, W - 6):
-            gd.line(s, (200, 200, 210), (x, GT), (x, GR), 6)
+                img = A.goal_back_r
+                x = W - gx - img.get_width() + off
+            s.blit(img, (x, gy))
         for i in range(2):
             if snap["sh"][i] > 0:
                 x = sim.GOAL_D + 2 if i == 0 else W - sim.GOAL_D - 2
@@ -2063,22 +2064,10 @@ class MatchScene(Scene, OnlineMixin):
                     s.blit(ice, ice.get_rect(center=(x, yy)))
 
     def _draw_goal_front(self, s, snap):
-        GD, GT, GR, RT = sim.GOAL_D, sim.GOAL_TOP, sim.GROUND, sim.ROOF_T
-        for side in (0, 1):
-            if side == 0:
-                roof = pygame.Rect(0, GT - RT, GD + 6, RT)
-                postx = GD
-            else:
-                roof = pygame.Rect(W - GD - 6, GT - RT, GD + 6, RT)
-                postx = W - GD
-            gd.rect(s, (30, 30, 40), roof.inflate(4, 4), 0, border_radius=6)
-            gd.rect(s, (245, 245, 250), roof, 0, border_radius=6)
-            gd.line(s, (255, 255, 255), (roof.x + 4, roof.y + 3), (roof.right - 4, roof.y + 3), 2)
-            gd.line(s, (30, 30, 40), (postx, GT - 2), (postx, GR), 12)
-            gd.line(s, (245, 245, 250), (postx, GT - 2), (postx, GR), 8)
-            gd.line(s, (255, 255, 255), (postx - 2, GT), (postx - 2, GR), 2)
-            for yy in (GT + 20, GT + 70, GT + 120, GT + 170):
-                gd.line(s, (230, 70, 70), (postx, yy), (postx, yy + 20), 8)
+        A = self.app.assets
+        gy = A.goal_pos[1]
+        s.blit(A.goal_front, (A.goal_post_x, gy))
+        s.blit(A.goal_front_r, (W - A.goal_post_x - A.goal_front_r.get_width(), gy))
 
     def _player_img(self, char, p, snap, i):
         """Duruma gore uygun pozu sec."""

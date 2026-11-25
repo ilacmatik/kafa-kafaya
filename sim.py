@@ -8,9 +8,9 @@ import random
 
 W, H = 1280, 720
 GROUND = 652
-GOAL_D = 92           # kale derinligi (px)
+GOAL_D = 102          # kale cizgisi (on direk ic yuzu) x konumu
 GOAL_H = 188          # kale agzi yuksekligi
-ROOF_T = 12           # ust direk/cati kalinligi
+ROOF_T = 26           # ust direk kalinligi (gorselle ayni)
 GOAL_TOP = GROUND - GOAL_H
 
 BALL_R = 20
@@ -349,8 +349,8 @@ class World:
 
     def _goal_rects(self):
         return [
-            (0, GOAL_TOP - ROOF_T, GOAL_D + 6, GOAL_TOP),
-            (W - GOAL_D - 6, GOAL_TOP - ROOF_T, W, GOAL_TOP),
+            (0, GOAL_TOP - ROOF_T, GOAL_D + 20, GOAL_TOP),
+            (W - GOAL_D - 20, GOAL_TOP - ROOF_T, W, GOAL_TOP),
         ]
 
     # ------------------------------------------------------------ adim
