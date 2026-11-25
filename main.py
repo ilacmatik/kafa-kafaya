@@ -61,16 +61,16 @@ ICE_C = (110, 220, 255)
 KEYS_SOLO = {
     "l": (pygame.K_a, pygame.K_LEFT), "r": (pygame.K_d, pygame.K_RIGHT),
     "j": (pygame.K_w, pygame.K_UP), "k": (pygame.K_SPACE, pygame.K_k),
-    "s": (pygame.K_s, pygame.K_DOWN), "o": (pygame.K_e, pygame.K_RCTRL),
+    "s": (pygame.K_q,), "o": (pygame.K_e, pygame.K_RCTRL), "d": (pygame.K_s, pygame.K_DOWN),
 }
 KEYS_P1 = {
     "l": (pygame.K_a,), "r": (pygame.K_d,), "j": (pygame.K_w,),
-    "k": (pygame.K_SPACE,), "s": (pygame.K_s,), "o": (pygame.K_e,),
+    "k": (pygame.K_SPACE,), "s": (pygame.K_q,), "o": (pygame.K_e,), "d": (pygame.K_s,),
 }
 KEYS_P2 = {
     "l": (pygame.K_LEFT,), "r": (pygame.K_RIGHT,), "j": (pygame.K_UP,),
-    "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_DOWN, pygame.K_KP1),
-    "o": (pygame.K_RCTRL, pygame.K_KP2),
+    "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_RSHIFT, pygame.K_KP1),
+    "o": (pygame.K_RCTRL, pygame.K_KP2), "d": (pygame.K_DOWN,),
 }
 WEATHERS = [("clear", "AÇIK HAVA"), ("rain", "YAĞMUR"), ("snow", "KAR"), ("wind", "RÜZGAR"), ("random", "RASTGELE")]
 
@@ -1244,14 +1244,14 @@ class HelpScene(Scene):
             ("Hareket", "A / D  veya  ← / →"),
             ("Zıpla", "W  veya  ↑"),
             ("Şut", "BOŞLUK  (basılı tut = şarjlı şut)"),
-            ("Aşırtma", "Top ayağa değerken W / ↑ basılı olsun"),
+            ("Aşırtma", "Şut atarken S / ↓ basılı olsun"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
-            ("Süper güç", "S  veya  ↓  (bar dolunca)"),
+            ("Süper güç", "Q  (bar dolunca)"),
             ("Omuz at", "E  veya  Sağ CTRL"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
-            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S süper, E omuz"),
-            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ süper, Sağ CTRL omuz"),
+            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S aşırtma, Q süper, E omuz"),
+            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ aşırtma, Sağ SHIFT süper, Sağ CTRL omuz"),
         ]
         y = 168
         for a, b in rows:
@@ -1954,7 +1954,7 @@ class MatchScene(Scene, OnlineMixin):
             sp = self.counts[i][1] > self.used[i][1]
             op = self.counts[i][2] > self.used[i][2]
             self.used[i] = list(self.counts[i])
-        return h["l"], h["r"], h["j"], kp, sp, h["k"], op
+        return h["l"], h["r"], h["j"], kp, sp, h["k"], op, h["d"]
 
     # -------------------------------------------------- guncelleme
     def update(self, dt):
@@ -2011,7 +2011,7 @@ class MatchScene(Scene, OnlineMixin):
                     op = r.get("o", 0) > self.used[1][2]
                     self.used[1] = [r.get("k", 0), r.get("s", 0), r.get("o", 0)]
                 w.apply_input(1, bool(r.get("l")), bool(r.get("r")), bool(r.get("j")), kp, sp,
-                              bool(r.get("kh", 0)) if "kh" in r else None, op)
+                              bool(r.get("kh", 0)) if "kh" in r else None, op, bool(r.get("dn", 0)))
             w.step(STEP)
             first = False
         snap = w.snapshot()
@@ -2029,7 +2029,7 @@ class MatchScene(Scene, OnlineMixin):
             h["l"], h["r"] = h["r"], h["l"]
         self.conn.send({"t": "in", "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
                         "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"]),
-                        "o": self.counts[1][2]})
+                        "o": self.counts[1][2], "dn": int(h["d"])})
         now = time.time()
         msgs = self.pending + self.conn.poll()
         self.pending = []
@@ -3171,7 +3171,7 @@ class MatchScene(Scene, OnlineMixin):
                 if armed > 0 or snap.get("mg", [0, 0])[i] > 0:
                     t = "SÜPER AKTİF!"
                 else:
-                    t = POWERS[pw][0] + " HAZIR · %s" % ("S / ↓" if self.mode != "local2" else ("S" if i == 0 else "↓"))
+                    t = POWERS[pw][0] + " HAZIR · %s" % ("Q" if self.mode != "local2" else ("Q" if i == 0 else "Sağ SHIFT"))
                 draw_text(s, t, 16, (bar.centerx, bar.bottom + 14), col, outline=3)
             # aktif guc ikonlari
             icons = []
@@ -3217,7 +3217,7 @@ class MatchScene(Scene, OnlineMixin):
             else:
                 who = "SEN" if turn == self.me else "RAKİP"
             draw_text(s, "%s ATIYOR · %s" % (who, sim.DISPLAY_NAMES[shooter]), 26, (W // 2, 290), WHITE, outline=4)
-            tip = "Şut: yerden  ·  Şut + YUKARI: üst köşe" if (self.mode == "local2" or turn == self.me) \
+            tip = "Şut: yerden  ·  Şut + AŞAĞI: üst köşe" if (self.mode == "local2" or turn == self.me) \
                 else "Kaleci: ZIPLA (üst köşe) ya da BEKLE (yerden)"
             draw_text(s, tip, 18, (W // 2, 324), (200, 225, 255), outline=2, title=False)
 

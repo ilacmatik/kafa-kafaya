@@ -165,7 +165,8 @@ class World:
         self.events.append("whistle")
 
     # ------------------------------------------------------------ girdiler
-    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed, kick_held=None, shoulder=False):
+    def apply_input(self, i, left, right, jump, kick_pressed, super_pressed, kick_held=None, shoulder=False,
+                    lob=False):
         p = self.players[i]
         jump_edge = jump and not p.jump_prev
         p.jump_prev = jump
@@ -204,7 +205,7 @@ class World:
         p.move = move
         p.face = p.dir   # oyuncu her zaman rakip kaleye bakar
         jmul = 1.28 if p.jump_t > 0 else 1.0
-        p.lob = bool(jump)   # yukari tusu basili mi (asirtma karari temas aninda verilir)
+        p.lob = bool(lob)    # asagi tusu basili mi (asirtma karari temas aninda verilir)
         if jump and p.on_ground:
             p.vy = -p.stats["jump"] * jmul
             p.on_ground = False
