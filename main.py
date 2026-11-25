@@ -245,6 +245,45 @@ def draw_meter(surf, rect, frac, color, right=False, glow=False):
         fx.blit_glow(surf, r.centerx, r.centery, r.w * 0.55, _shade(color, 0.35))
 
 
+_segs = {}
+
+
+def stat_seg(surf, x, y, on, maxed, t):
+    """Egik, parlak ozellik segmenti."""
+    key = (on, maxed)
+    img = _segs.get(key)
+    if img is None:
+        k = gfx.K
+        w, h, sk = 25 * k, 18 * k, 6 * k
+        S = pygame.Surface((int(w + sk + 4 * k), int(h + 4 * k)), pygame.SRCALPHA)
+        o = 2 * k
+        poly = [(o + sk, o), (o + w + sk, o), (o + w, o + h), (o, o + h)]
+        pygame.draw.polygon(S, (12, 14, 34), [(px, py) for px, py in poly], 0)
+        inner = [(poly[0][0] + 2.2 * k, poly[0][1] + 2 * k), (poly[1][0] - 2 * k, poly[1][1] + 2 * k),
+                 (poly[2][0] - 2.2 * k, poly[2][1] - 2 * k), (poly[3][0] + 2 * k, poly[3][1] - 2 * k)]
+        if on:
+            top, bot = ((140, 255, 150), (30, 170, 70)) if maxed else ((255, 240, 140), (255, 160, 20))
+            g = pygame.Surface(S.get_size(), pygame.SRCALPHA)
+            for yy in range(S.get_height()):
+                f = yy / max(1, S.get_height() - 1)
+                g.fill(tuple(int(top[i] + (bot[i] - top[i]) * f) for i in range(3)) + (255,), (0, yy, S.get_width(), 1))
+            msk = pygame.Surface(S.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(msk, (255, 255, 255, 255), inner)
+            g.blit(msk, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            S.blit(g, (0, 0))
+            hl = [(inner[0][0], inner[0][1]), (inner[1][0], inner[1][1]),
+                  (inner[1][0] - 1.5 * k, inner[1][1] + h * 0.35), (inner[0][0] - 1.5 * k, inner[0][1] + h * 0.35)]
+            pygame.draw.polygon(S, (255, 255, 255, 90), hl)
+        else:
+            pygame.draw.polygon(S, (34, 42, 74), inner)
+            pygame.draw.line(S, (20, 24, 44), inner[0], inner[1], max(1, int(2 * k)))
+        img = gfx.Img(S)
+        _segs[key] = img
+    surf.blit(img, img.get_rect(center=(x, y)))
+    if on and maxed:
+        fx.blit_glow(surf, x, y, 14 + 3 * math.sin(t * 6), (20, 60, 25))
+
+
 def panel(surf, rect, color=(15, 20, 40, 200), radius=16, border=None, bw=3):
     r = pygame.Rect(rect)
     k = gfx.K
@@ -576,10 +615,8 @@ class Assets:
             cp = res("assets", "p%d_celeb.png" % i)
             cimg = L("p%d_celeb.png" % i) if os.path.exists(cp) else idle
             self.big_celeb.append(scaled(cimg, fb))
-            head = idle.subsurface(pygame.Rect(0, 0, idle.get_width(), int(idle.get_height() * 0.40))).copy()
-            ph = 58
-            self.portrait.append(scaled(head, ph / head.get_height()))
-            self.portrait_big.append(scaled(head, 104 / head.get_height()))
+            self.portrait.append(self._round_portrait(idle, 66))
+            self.portrait_big.append(self._round_portrait(idle, 100))
         d = sim.BALL_R * 2 + 2
         self.ball = S(L("ball.png"), d, d)
         self.ball_fire = self._fit(L("ball_fire.png"), int(d * 1.45))
@@ -592,6 +629,7 @@ class Assets:
                     ("freeze", "pu_freeze.png"), ("gold", "orb_gold.png"))}
         self.pu_small = {key: tf.smoothscale(v, (30, 30)) for key, v in self.pu.items()}
         self.icon_fire = self._fit(L("ball_fire.png"), 30)
+        self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
         # arayuz parcalari
         self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
         self.icons = {n: self._fit(L("ic_%s.png" % n), 46) for n in ("host", "join", "bot", "2p", "keys", "exit")}
@@ -607,6 +645,27 @@ class Assets:
         self._slices = {}
         self.icon_ice = self._fit(L("ball_ice.png"), 30)
         self._flip_cache = {}
+
+    @staticmethod
+    def _round_portrait(idle, d):
+        """Kafayi tamamen gosteren yuvarlak portre (cap = d mantiksal piksel)."""
+        w, h = idle.get_size()
+        a = pygame.mask.from_surface(idle, 60)
+        # kafanin alt siniri: ust %45'teki en dar satir (boyun)
+        neck, best = int(h * 0.38), w
+        for y in range(int(h * 0.28), int(h * 0.46)):
+            cnt = sum(1 for x in range(0, w, 2) if a.get_at((x, y)))
+            if cnt < best:
+                best, neck = cnt, y
+        side = int(max(w, neck) * 1.08)
+        sq = pygame.Surface((side, side), pygame.SRCALPHA)
+        sq.blit(idle, ((side - w) // 2, int(side * 0.06)), pygame.Rect(0, 0, w, min(h, side)))
+        D = max(4, int(d * gfx.K))
+        sq = pygame.transform.smoothscale(sq, (D, D))
+        circ = pygame.Surface((D, D), pygame.SRCALPHA)
+        pygame.draw.circle(circ, (255, 255, 255, 255), (D // 2, D // 2), D // 2)
+        sq.blit(circ, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        return gfx.Img(sq)
 
     @staticmethod
     def _fit(raw, size):
@@ -1182,7 +1241,12 @@ class SelectScene(Scene, OnlineMixin):
             self.pick[1] = random.randrange(6)
         if self.conn:
             self._send_pick()
+            if mode == "host":
+                self.conn.send({"t": "stad", "s": app.stadium})
         self.cards = [pygame.Rect(cx - 85, 300, 170, 270) for cx in PODIUMS]
+        self.anim = [[-1, 0.0], [-1, 0.0]]
+        self.stad_rect = pygame.Rect(0, 0, 250, 30)
+        self.stad_rect.center = (W // 2, 258)
 
     def _send_pick(self):
         if self.conn:
@@ -1256,6 +1320,12 @@ class SelectScene(Scene, OnlineMixin):
                 self.level = (self.level + 1) % 3
                 self.app.bot_level = self.level
                 self.app.sound.play("click")
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.stad_rect.collidepoint(e.pos):
+            if self.mode != "client":
+                self.app.stadium = (self.app.stadium + 1) % len(STADIUMS)
+                self.app.sound.play("click")
+                if self.conn:
+                    self.conn.send({"t": "stad", "s": self.app.stadium})
         elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
             for i, r in enumerate(self.cards):
                 if r.collidepoint(e.pos):
@@ -1271,6 +1341,8 @@ class SelectScene(Scene, OnlineMixin):
 
     def update(self, dt):
         self.t += dt
+        for a in self.anim:
+            a[1] = min(1.5, a[1] + dt * 1.6)
         if self.conn:
             if not self.online_tick(dt):
                 return
@@ -1326,15 +1398,17 @@ class SelectScene(Scene, OnlineMixin):
             gd.circle(s, GOLD, pc, 58, 3)
             tx = r.x + 150 if who == 0 else r.x + 26
             draw_text(s, sim.DISPLAY_NAMES[c], 34, (tx - 2, r.y + 44), WHITE, anchor="midleft", outline=4)
+            if self.anim[who][0] != c:
+                self.anim[who] = [c, 0.0]
+            prog = self.anim[who][1]
             for j, (lab, val) in enumerate(zip(("HIZ", "ZIPLAMA", "ŞUT"), sim.STAT_BARS[c])):
-                y = r.y + 86 + j * 24
-                draw_text(s, lab, 14, (tx, y), (190, 205, 235), anchor="midleft", outline=2, title=False)
+                y = r.y + 84 + j * 25
+                ic = A.stat_icons[j]
+                s.blit(ic, ic.get_rect(center=(tx + 12, y)))
+                draw_text(s, lab, 14, (tx + 30, y), (205, 218, 245), anchor="midleft", outline=2)
                 for k in range(5):
-                    seg = pygame.Rect(tx + 88 + k * 30, y - 8, 27, 16)
-                    if k < val:
-                        pill(s, seg, (255, 196, 40), border=(70, 40, 5), radius=5)
-                    else:
-                        pill(s, seg, (40, 50, 86), border=(14, 18, 36), radius=5, gloss=False)
+                    on = k < val and prog * 10 > j * 2 + k
+                    stat_seg(s, tx + 112 + k * 29, y, on, val >= 5, self.t + k * 0.15)
             pw = sim.CHARACTERS[c]["power"]
             ic = A.icon_fire if pw == "fire" else A.icon_ice
             s.blit(ic, ic.get_rect(center=(tx + 12, r.y + 162)))
@@ -1359,8 +1433,7 @@ class SelectScene(Scene, OnlineMixin):
         draw_text(s, "VS", 78, (W // 2, 160 + vs_bob), GOLD, outline=6)
         draw_text(s, "Süre: %d sn%s" % (self.dur, "  (T)" if self.mode != "client" else ""), 18,
                   (W // 2, 226), (215, 225, 245), outline=2, title=False)
-        stp = pygame.Rect(0, 0, 250, 30)
-        stp.center = (W // 2, 258)
+        stp = self.stad_rect
         pill(s, stp, (30, 120, 60) if self.app.stadium == 1 else (40, 60, 130), radius=12)
         draw_text(s, STADIUMS[self.app.stadium]["name"] + ("  (Y)" if self.mode != "client" else ""), 15,
                   (stp.centerx, stp.centery - 1), WHITE, outline=2)
@@ -2456,7 +2529,7 @@ class App:
         global ASSETS
         ASSETS = self.assets
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
-        self.stadium = 0
+        self.stadium = 1   # varsayilan: Timsah Arena
         self.sound = Sound()
         self.clock = pygame.time.Clock()
         self.running = True
