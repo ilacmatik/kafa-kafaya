@@ -830,8 +830,8 @@ class Assets:
             self.pen_bg = gfx.from_surface(pygame.image.load(res("assets", "pen_bg.jpg")).convert(), (W, H))
         self.pen_back, self.pen_kickb, self.pen_dive, self.pen_jump = {}, {}, {}, {}
         for i in range(6):
-            for dct, nm, hh in ((self.pen_back, "pen_back%d.png", 330), (self.pen_kickb, "pen_kick%d.png", 330),
-                                (self.pen_dive, "pen_dive%d.png", 170), (self.pen_jump, "pen_jump%d.png", 240)):
+            for dct, nm, hh in ((self.pen_back, "pen_back%d.png", 215), (self.pen_kickb, "pen_kick%d.png", 215),
+                                (self.pen_dive, "pen_dive%d.png", 165), (self.pen_jump, "pen_jump%d.png", 205)):
                 v = opt(nm % i, hh)
                 if v is not None:
                     dct[i] = v
@@ -2614,7 +2614,7 @@ class MatchScene(Scene, OnlineMixin):
 
     # -------------------------------------------------- cizim
     # ------------------------------------------------------------------ penalti gorunumu
-    PEN_GOAL = (330, 950, 250, 560)    # sol, sag, ust direk alti, zemin (penalti kamerasi)
+    PEN_GOAL = (304, 976, 230, 507)    # sol, sag, ust direk alti, zemin (penalti kamerasi)
 
     def _pen_zone(self, col, row):
         x0, x1, y0, y1 = self.PEN_GOAL
@@ -2658,7 +2658,8 @@ class MatchScene(Scene, OnlineMixin):
         schar = snap["p"][turn][9]
         # kaleci
         kimg = A.sel_heroes[kchar]
-        kx, ky, ang = W / 2, y1 + 6, 0.0
+        kimg = tf.rotozoom(kimg, 0, 185 / kimg.get_height())
+        kx, ky, ang = W / 2, y1 + 4, 0.0
         if shot is not None:
             scol, srow, kcol, krow, out = shot
             e = min(1.0, max(0.0, (t_shot - 0.18) / 0.32))
@@ -2668,7 +2669,7 @@ class MatchScene(Scene, OnlineMixin):
                 kx += kcol * gw * 0.30 * e
                 ky -= (120 if krow == 1 else 30) * e
                 if dive is not None and e > 0.2:
-                    kimg = dive if kcol < 0 else A.flipped(dive)
+                    kimg = dive if kcol > 0 else A.flipped(dive)
                 else:
                     ang = -kcol * 75 * e
             else:
@@ -2684,7 +2685,7 @@ class MatchScene(Scene, OnlineMixin):
         s.blit(sh_, sh_.get_rect(center=(kx, y1 + 8)))
         s.blit(kimg, kimg.get_rect(midbottom=(kx, ky)) if not ang else kimg.get_rect(center=(kx, ky - 110)))
         # top
-        bx0, by0 = W / 2 + 30, 676
+        bx0, by0 = W / 2 + 34, 660
         bx, by, bs = bx0, by0, 1.0
         if shot is not None:
             scol, srow, kcol, krow, out = shot
@@ -2702,14 +2703,20 @@ class MatchScene(Scene, OnlineMixin):
                 bs = 0.5 + 0.15 * k2
             elif out == 0 and t_shot > 0.42:
                 by = ty + 10 * math.sin((t_shot - 0.42) * 12) * math.exp(-(t_shot - 0.42) * 4)
-        ball = tf.rotozoom(A.ball, -t_shot * 900 % 360, 1.6 * bs)
-        s.blit(ball, ball.get_rect(center=(bx, by)))
-        # atici (arkadan)
+        # atici (arkadan) - gorselde top ayaginin dibinde
         back = A.pen_back.get(schar)
         kick_pose = A.pen_kickb.get(schar)
-        img = kick_pose if (kick_pose is not None and ph in ("pen_shot",) and t_shot < 0.5) else back
+        shooting = shot is not None
+        img = kick_pose if (kick_pose is not None and shooting) else back
+        if (not shooting or t_shot > 0.06) or img is None:
+            if shooting:
+                ball = tf.rotozoom(A.ball, -t_shot * 900 % 360, 1.5 * bs)
+                s.blit(ball, ball.get_rect(center=(bx, by)))
+            elif img is None:
+                ball = tf.rotozoom(A.ball, 0, 1.5)
+                s.blit(ball, ball.get_rect(center=(bx0, by0)))
         if img is not None:
-            s.blit(img, img.get_rect(midbottom=(W / 2 - 70, H + 30)))
+            s.blit(img, img.get_rect(midbottom=(W / 2, 722)))
         else:
             im = A.flipped(A.sel_heroes[schar])
             im = tf.rotozoom(im, 0, 1.25)
@@ -2726,8 +2733,12 @@ class MatchScene(Scene, OnlineMixin):
                         zx, zy = self._pen_zone(c_, r_)
                         on = (c_, r_) == (col, row)
                         rr = 30 if on else 16
-                        gd.circle(s, (12, 14, 34), (zx, zy), rr + 3)
-                        gd.circle(s, (255, 214, 60) if on else (120, 160, 220), (zx, zy), rr, 0 if on else 3)
+                        if on:
+                            fx.blit_glow(s, zx, zy, 46, (90, 70, 10))
+                        gd.circle(s, (12, 14, 34), (zx, zy), rr + 2, 6 if on else 5)
+                        gd.circle(s, (255, 214, 60) if on else (120, 160, 220), (zx, zy), rr, 4 if on else 3)
+                        if on:
+                            gd.circle(s, (255, 214, 60), (zx, zy), 5)
                 if me == turn:
                     tip = "ATIYORSUN  ·  ←/→ ve ↑ ile yön seç, ŞUT ile vur"
                 else:
