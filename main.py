@@ -740,6 +740,7 @@ class Assets:
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
         self.big_celeb = []
+        self.menu_char = []
         self.portrait_big = []
         self.kick_anchor = []
         self.poses = []
@@ -776,6 +777,7 @@ class Assets:
             cp = res("assets", "p%d_celeb.png" % i)
             cimg = L("p%d_celeb.png" % i) if os.path.exists(cp) else idle
             self.big_celeb.append(scaled(cimg, fb))
+            self.menu_char.append(scaled(idle, 300 / idle.get_height()))
             self.portrait.append(self._round_portrait(idle, 66))
             self.portrait_big.append(self._round_portrait(idle, 100))
         d = sim.BALL_R * 2 + 2
@@ -813,7 +815,13 @@ class Assets:
             self.stat_badges = [self._fit(L("sb_%d.png" % k), 28) for k in range(8)]
         self.stat_icons = [self._fit(L(n), 30) for n in ("st_speed.png", "st_jump.png", "st_shot.png")]
         # arayuz parcalari
-        self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel")}
+        self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel",
+                                                    "m2_gold", "m2_navy")}
+        self.m2_bg = gfx.from_surface(pygame.image.load(res("assets", "m2_bg.jpg")).convert(), (W, H))
+        self.m2_round = self._fit(L("m2_round.png"), 78)
+        self.m2_ic = {n: self._fit(L("m2_ic_%s.png" % n), 50) for n in
+                      ("host", "join", "bot", "cup", "2p", "keys", "exit")}
+        self.m2_ic_small = {n: self._fit(L("m2_ic_%s.png" % n), 40) for n in ("2p", "keys", "exit")}
         self.icons = {n: self._fit(L("ic_%s.png" % n), 46) for n in ("host", "join", "bot", "2p", "keys", "exit")}
         self.icons["cup"] = self.icons["bot"]
         self.ref = {}
@@ -1145,23 +1153,45 @@ MENU_ITEMS = [
 
 
 class MenuScene(Scene):
-    """PES tarzi ana menu: ortada karakter, altta ikonlu serit."""
+    """Ana menu: solda buyuk dugmeler, sagda isikli sahnede karsi karsiya iki karakter."""
+    BIG = ("bot", "host", "join", "cup")
+    SMALL = ("2p", "keys", "exit")
 
     def __init__(self, app):
         super().__init__(app)
-        self.sel = 0
         self.t = 0
-        self.hero = random.randrange(6)
-        self.hero_t = 0.0
-        self.prev_hero = None
-        self.spark = Sparkles(30)
+        self.order = list(self.BIG + self.SMALL)
+        self.sel = 0                     # self.order icinde
         self.pick_t = 0.0
-        self.slots = [pygame.Rect(318 + k * 124 - 50, 492, 100, 92) for k in range(len(MENU_ITEMS))]
+        self.spark = Sparkles(26)
+        self.pair = self._new_pair()
+        self.pair_t = 0.0
+        self.rects = {}
+        y = 168
+        for i, k in enumerate(self.BIG):
+            h = 84 if i == 0 else 70
+            self.rects[k] = pygame.Rect(58, y, 430 if i == 0 else 410, h)
+            y += h + 14
+        for i, k in enumerate(self.SMALL):
+            self.rects[k] = pygame.Rect(78 + i * 128, 532, 84, 84)
         app.series = None
+
+    @staticmethod
+    def _new_pair():
+        a = random.randrange(6)
+        b = (a + 1 + random.randrange(5)) % 6
+        return a, b
+
+    @staticmethod
+    def _info(key):
+        for k, title, desc in MENU_ITEMS:
+            if k == key:
+                return title, desc
+        return key, ""
 
     def _go(self):
         a = self.app
-        key = MENU_ITEMS[self.sel][0]
+        key = self.order[self.sel]
         a.sound.play("kick")
         if key == "host":
             a.go(HostWaitScene(a))
@@ -1178,96 +1208,120 @@ class MenuScene(Scene):
         else:
             a.quit()
 
-    def _move(self, d):
-        self.sel = (self.sel + d) % len(MENU_ITEMS)
-        self.pick_t = 0.0
-        self.app.sound.play("click")
+    def _set(self, i):
+        if i != self.sel:
+            self.sel = i % len(self.order)
+            self.pick_t = 0.0
+            self.app.sound.play("click")
 
     def handle(self, e):
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_ESCAPE:
                 self.app.quit()
-            elif e.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN, pygame.K_s, pygame.K_TAB):
-                self._move(1)
-            elif e.key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP, pygame.K_w):
-                self._move(-1)
+            elif e.key in (pygame.K_DOWN, pygame.K_s, pygame.K_TAB):
+                self._set(self.sel + 1)
+            elif e.key in (pygame.K_UP, pygame.K_w):
+                self._set(self.sel - 1)
+            elif e.key in (pygame.K_RIGHT, pygame.K_d):
+                self._set(self.sel + 1 if self.sel >= len(self.BIG) else len(self.BIG))
+            elif e.key in (pygame.K_LEFT, pygame.K_a):
+                self._set(self.sel - 1 if self.sel > len(self.BIG) else 0)
             elif e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
                 self._go()
         elif e.type == pygame.MOUSEMOTION:
-            for k, r in enumerate(self.slots):
-                if r.collidepoint(e.pos) and k != self.sel:
-                    self.sel = k
-                    self.pick_t = 0.0
-                    self.app.sound.play("click")
+            for i, k in enumerate(self.order):
+                if self.rects[k].collidepoint(e.pos):
+                    self._set(i)
         elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-            for k, r in enumerate(self.slots):
-                if r.collidepoint(e.pos):
-                    self.sel = k
+            for i, k in enumerate(self.order):
+                if self.rects[k].collidepoint(e.pos):
+                    self.sel = i
                     self._go()
+                    return
 
     def update(self, dt):
         self.t += dt
         self.pick_t += dt
-        self.hero_t += dt
+        self.pair_t += dt
         self.spark.update(dt)
-        if self.hero_t > 4.5:
-            self.prev_hero = self.hero
-            self.hero = (self.hero + 1 + random.randrange(5)) % 6
-            self.hero_t = 0.0
+        if self.pair_t > 5.5:
+            self.pair = self._new_pair()
+            self.pair_t = 0.0
+
+    def _draw_stage(self, s):
+        A = self.app.assets
+        cx, gy = 908, 532
+        fx.blit_glow(s, cx, gy - 40, 260 + 12 * math.sin(self.t * 1.3), (60, 50, 20))
+        k = min(1.0, self.pair_t / 0.5)
+        out = max(0.0, (self.pair_t - 5.1) / 0.4)
+        ease = 1 - (1 - k) ** 3
+        for side, c in enumerate(self.pair):
+            img = A.menu_char[c]
+            if side == 1:
+                img = tf.flip(img, True, False)
+            d = -1 if side == 0 else 1
+            x = cx + d * 118 + d * 260 * (1 - ease) + d * 260 * out
+            bob = math.sin(self.t * 2.2 + side * 1.7) * 3
+            alpha = int(255 * min(ease, 1 - out))
+            img.set_alpha(alpha)
+            s.blit(img, img.get_rect(midbottom=(x, gy + bob)))
+            img.set_alpha(255)
+            col = P_COLORS[0] if side == 0 else P_COLORS[1]
+            draw_text(s, sim.DISPLAY_NAMES[c], 22, (x, gy + 26), WHITE, outline=4,
+                      alpha=alpha)
+            gd.line(s, col, (x - 36, gy + 42), (x + 36, gy + 42), 3) if alpha > 200 else None
+        if ease > 0.6 and out <= 0:
+            pul = 1 + 0.06 * math.sin(self.t * 5)
+            draw_text(s, "VS", int(46 * pul), (cx, gy - 150), GOLD, outline=6)
+
+    def _button(self, s, key, rect, primary, on):
+        A = self.app.assets
+        title, _ = self._info(key)
+        pop = 1 + (0.05 * max(0.0, 1 - self.pick_t * 5) if on else 0)
+        r = rect.inflate(int(rect.w * (pop - 1)), int(rect.h * (pop - 1)))
+        if on:
+            fx.blit_glow(s, r.centerx, r.centery, r.w * 0.42, (70, 60, 20) if primary else (25, 55, 110))
+        img = A.slice3("m2_gold" if primary else "m2_navy", r.w, r.h)
+        if not on and not primary:
+            img.set_alpha(225)
+        s.blit(img, r.topleft)
+        img.set_alpha(255)
+        ic = A.m2_ic[key]
+        s.blit(ic, ic.get_rect(center=(r.x + 52, r.centery)))
+        tcol = (40, 26, 6) if primary else (GOLD if on else WHITE)
+        draw_text(s, title, 30 if primary else 25, (r.x + 96, r.centery), tcol, anchor="midleft",
+                  outline=0 if primary else 3)
+        if on and not primary:
+            gd.rect(s, GOLD, r.inflate(4, 4), 3, border_radius=int(r.h * 0.35))
 
     def draw(self, s):
         A = self.app.assets
-        s.blit(A.pm_bg, (0, 0))
-        # isik huzmesi ve parilti
-        fx.blit_glow(s, 640, 250, 210 + 10 * math.sin(self.t * 1.7), (20, 45, 90))
+        s.blit(A.m2_bg, (0, 0))
         self.spark.draw(s, self.t)
-        # karakter: sagdan kayarak gelir
-        k = min(1.0, self.hero_t / 0.45)
-        ease = 1 - (1 - k) ** 3
-        if self.prev_hero is not None and k < 1:
-            old = A.pm_heroes[self.prev_hero]
-            old.set_alpha(int(255 * (1 - k)))
-            s.blit(old, old.get_rect(midbottom=(640 - 160 * ease, 436)))
-            old.set_alpha(255)
-        hero = A.pm_heroes[self.hero]
-        bob = math.sin(self.t * 2) * 4
-        hero.set_alpha(int(255 * k))
-        s.blit(hero, hero.get_rect(midbottom=(640 + 180 * (1 - ease), 436 + bob)))
-        hero.set_alpha(255)
-        draw_text(s, sim.DISPLAY_NAMES[self.hero], 20, (640 + 180 * (1 - ease), 112), GOLD, outline=3)
-        # logo
+        self._draw_stage(s)
         lg = A.logo_small
-        s.blit(lg, lg.get_rect(topleft=(24, 12)))
-        # alt serit: secili oge buyuk
-        key, title, desc = MENU_ITEMS[self.sel]
-        big = A.pm_icons_big[key]
-        pop = 1 + 0.12 * max(0.0, 1 - self.pick_t * 5)
-        bimg = tf.rotozoom(big, 0, pop) if pop > 1.001 else big
-        fx.blit_glow(s, 196, 505, 80, (25, 60, 110))
-        s.blit(bimg, bimg.get_rect(center=(196, 508)))
-        draw_text(s, title, 40, (286, 452), WHITE, anchor="midleft", outline=4)
-        gd.line(s, (200, 170, 80), (286, 478), (1180, 478), 2)
-        # ikon sirasi
-        for n, (k2, t2, _) in enumerate(MENU_ITEMS):
-            r = self.slots[n]
-            cx, cy = r.centerx, r.y + 34
-            ic = A.pm_icons[k2]
-            if n == self.sel:
-                fx.blit_glow(s, cx, cy, 52 + 4 * math.sin(self.t * 6), (30, 80, 140))
-                ic2 = tf.rotozoom(ic, 0, 1.14)
-                s.blit(ic2, ic2.get_rect(center=(cx, cy - 2)))
-                draw_text(s, t2, 13, (cx, cy + 46), GOLD, outline=2)
-            else:
-                ic.set_alpha(150)
-                s.blit(ic, ic.get_rect(center=(cx, cy)))
-                ic.set_alpha(255)
-                draw_text(s, t2, 12, (cx, cy + 44), (170, 190, 225), outline=2, title=False)
-        # aciklama plakasi
-        bar = A.pm_bar
-        s.blit(bar, (118, 606))
-        draw_text(s, desc, 19, (168, 634), WHITE, anchor="midleft", outline=2, title=False)
-        draw_text(s, "←/→ seç   ·   ENTER onayla   ·   F11 tam ekran   ·   M ses   ·   P gizle", 15,
-                  (W // 2, 694), (180, 195, 225), outline=2, title=False)
+        s.blit(lg, lg.get_rect(topleft=(40, 12)))
+        cur = self.order[self.sel]
+        for i, k in enumerate(self.BIG):
+            self._button(s, k, self.rects[k], i == 0, cur == k)
+        for k in self.SMALL:
+            r = self.rects[k]
+            on = cur == k
+            if on:
+                fx.blit_glow(s, r.centerx, r.centery, 62, (70, 60, 20))
+            rb = A.m2_round
+            s.blit(rb, rb.get_rect(center=r.center))
+            ic = A.m2_ic_small[k]
+            s.blit(ic, ic.get_rect(center=r.center))
+            title, _ = self._info(k)
+            if k == "2p":
+                title = "2 KİŞİ"
+            draw_text(s, title, 15, (r.centerx, r.bottom + 12), GOLD if on else (215, 222, 240), outline=3)
+        _, desc = self._info(cur)
+        draw_text(s, desc, 18, (60, 668), (225, 232, 245), anchor="midleft", outline=3, title=False)
+        if not touch.ENABLED:
+            draw_text(s, "↑/↓ seç   ·   ENTER onayla   ·   F11 tam ekran   ·   M ses   ·   P gizle", 15,
+                      (W // 2 + 180, 700), (170, 185, 215), outline=2, title=False)
         draw_text(s, VERSION_TEXT, 14, (W - 12, 12), (170, 185, 215), anchor="topright", outline=2, title=False)
 
 
