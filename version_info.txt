@@ -1,0 +1,28 @@
+# PyInstaller surum bilgisi (exe Ozellikler > Ayrintilar). CI'da RUNNUM degistirilir.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, RUNNUM, 0),
+    prodvers=(1, 0, RUNNUM, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('041F04B0', [
+        StringStruct('CompanyName', 'ilacmatik'),
+        StringStruct('FileDescription', 'Kafa Kafaya Futbol - iki kisilik ag oyunu'),
+        StringStruct('FileVersion', '1.0.RUNNUM.0'),
+        StringStruct('InternalName', 'KafaKafaya'),
+        StringStruct('LegalCopyright', 'ilacmatik'),
+        StringStruct('OriginalFilename', 'KafaKafaya.exe'),
+        StringStruct('ProductName', 'Kafa Kafaya Futbol'),
+        StringStruct('ProductVersion', '1.0.RUNNUM.0')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [0x041F, 1200])])
+  ]
+)
