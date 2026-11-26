@@ -37,9 +37,21 @@ jobs:
             sleep 60
             adb exec-out screencap -p > emu_ekran1.png || true
             adb logcat -d > logcat.txt || true
-            adb shell am start -n org.ilacmatik.kafakafaya/org.kivy.android.PythonActivity
-            sleep 30
+            adb shell wm size
+            adb shell input tap 287 238
+            sleep 6
             adb exec-out screencap -p > emu_ekran2.png || true
+            adb shell input tap 100 200
+            sleep 2
+            adb shell input tap 100 200
+            sleep 12
+            adb shell input swipe 151 276 152 276 2500 &
+            sleep 1.2
+            adb exec-out screencap -p > emu_ekran3.png || true
+            sleep 3
+            adb shell input tap 284 60
+            sleep 2
+            adb exec-out screencap -p > emu_ekran4.png || true
             adb logcat -d > logcat2.txt || true
       - name: Log ozeti
         if: always()
@@ -50,4 +62,4 @@ jobs:
           grep -iE "python|sdl|kafa|fatal|androidruntime|signal" logcat2.txt | tail -120 || true
       - name: Ekran goruntulerini yukle
         if: always()
-        run: gh release upload $TAG emu_ekran1.png emu_ekran2.png --clobber --repo ${{ github.repository }} || true
+        run: gh release upload $TAG emu_ekran1.png emu_ekran2.png emu_ekran3.png emu_ekran4.png --clobber --repo ${{ github.repository }} || true
