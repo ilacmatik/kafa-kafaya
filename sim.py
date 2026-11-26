@@ -46,13 +46,23 @@ STAT_BARS = [  # hiz, ziplama, sut (0-5) - secim ekrani icin
     (4, 3, 4), (3, 3, 4), (2, 5, 2), (3, 5, 3), (5, 2, 2), (1, 1, 5),
 ]
 
-BASE_H = 160.0 * 0.85
-SIZE = 0.85            # oyuncu boyutu carpani (carpisma daireleri de buna gore)
-JUMP_K = 0.85          # ziplama gucu carpani
+BASE_H = 160.0 * 0.95
+SIZE = 0.95            # oyuncu boyutu carpani (carpisma daireleri de buna gore)
+JUMP_K = 0.88          # ziplama gucu carpani
 
 
 def clamp(v, a, b):
     return a if v < a else b if v > b else v
+
+
+def jump_cap(p):
+    """En yuksek ziplamada kafa ile ust direk arasinda bir top (+2 px) boslugu kalsin."""
+    return jump_cap_h(p.h)
+
+
+def jump_cap_h(h):
+    room = GROUND - h - (GOAL_TOP + 2 * BALL_R + 2)
+    return math.sqrt(max(0.0, 2 * PLAYER_G * room))
 
 
 class Player:
@@ -243,7 +253,7 @@ class World:
         jmul = 1.28 if p.jump_t > 0 else 1.0
         p.lob = bool(lob)    # asagi tusu basili mi (asirtma karari temas aninda verilir)
         if jump and p.on_ground:
-            p.vy = -p.stats["jump"] * JUMP_K * jmul
+            p.vy = -min(p.stats["jump"] * JUMP_K * jmul, jump_cap(p) if jmul <= 1.0 else 1e9)
             p.on_ground = False
             p.air_jumps = 1
             p.jump_cut = False
@@ -255,7 +265,7 @@ class World:
         elif jump_edge and not p.on_ground and p.air_jumps > 0:
             # cift ziplama
             p.air_jumps = 0
-            p.vy = -p.stats["jump"] * JUMP_K * 0.82 * jmul
+            p.vy = -min(p.stats["jump"] * JUMP_K * 0.82 * jmul, jump_cap(p) if jmul <= 1.0 else 1e9)
             self.events.append("jump2:%d" % i)
         # sut: basili tut = sarj, birak = vur (dokunus = normal sut)
         if kick_held is None:

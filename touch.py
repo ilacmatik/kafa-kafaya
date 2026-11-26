@@ -3,7 +3,7 @@
 Mac icinde:
 - Solda serbest joystick (PUBG gibi): sol alt bolgeye nereye dokunursan orada acilir,
   surukle: sola/saga kos, yukari it: zipla (basili tutulan ziplama gibi).
-- Sagda PUBG tarzi dugme kumesi: buyuk SUT, cevresinde ZIPLA, ASIRT, SUPER, OMUZ.
+- Sagda PUBG tarzi dugme kumesi: buyuk SUT, cevresinde ASIRTMA, SUPER, OMUZ (ziplama joystick'te).
 - Ustte duraklat.
 Her ekranda: ekranin sol/sag kenarindan iceri cekmek = geri (ESC).
 Menulerde "dokunma alanlari": sahne cizerken kaydedilir, dokununca klavye tusu uretilir.
@@ -22,14 +22,15 @@ CAM_UP = 130 if ENABLED else 0     # mac sahnesi bu kadar yukari kayar, altta ko
 
 # --- sag dugme kumesi: eylem -> (x, y, yaricap) ---
 BUTTONS = {
-    "k": (1188, 650, 60),     # sut (buyuk)
-    "j": (1068, 674, 44),     # zipla
-    "d": (1082, 574, 40),     # asirtma
-    "s": (1198, 548, 38),     # super
-    "o": (962, 678, 38),      # omuz / kayma
+    "k": (1064, 662, 62),     # sut (buyuk) - eski ziplama yeri
+    "d": (1194, 646, 50),     # asirtma: basinca asirtma vurusu yapar
+    "s": (1194, 532, 40),     # super
+    "o": (948, 680, 38),      # omuz / kayma
     "p": (640, 128, 24),      # duraklat
 }
-PRESS_KEYS = {"k": pygame.K_SPACE, "s": pygame.K_q, "o": pygame.K_e, "d": pygame.K_s, "p": pygame.K_ESCAPE}
+# asirtma dugmesi: asagi (asirtma) basili tutulurken sut basilir -> tek dokunusla asirtma vurusu.
+# (eskiden asagi tusu gonderiyordu; iki kez basinca super ile karisiyordu)
+PRESS_KEYS = {"k": pygame.K_SPACE, "s": pygame.K_q, "o": pygame.K_e, "d": pygame.K_SPACE, "p": pygame.K_ESCAPE}
 
 # --- joystick ---
 JOY_HOME = (150, 640)      # bos dururken tabanin yeri

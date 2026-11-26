@@ -2475,7 +2475,12 @@ class MatchScene(Scene, OnlineMixin):
         k = min(1.0, dt * 60)
         pr[2] += (move * spd - pr[2]) * acc * k
         if h["j"] and pr[4]:
-            pr[3] = -st["jump"] * sim.JUMP_K * (1.28 if srv[11] > 0 else 1.0)
+            v_ = st["jump"] * sim.JUMP_K
+            if srv[11] > 0:
+                v_ *= 1.28
+            else:
+                v_ = min(v_, sim.jump_cap_h(sim.BASE_H * st["scale"]))
+            pr[3] = -v_
             pr[4] = False
         pr[3] += sim.PLAYER_G * dt
         pr[0] = max(28, min(W - 28, pr[0] + pr[2] * dt))
