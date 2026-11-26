@@ -50,7 +50,7 @@ jobs:
             sleep 3.5
             adb exec-out screencap -p > emu_ekran4.png || true
             sleep 2
-            adb shell input swipe 49 276 50 276 5000 &
+            adb shell input swipe 81 276 82 276 5000 &
             sleep 3.5
             adb exec-out screencap -p > emu_ekran5.png || true
             sleep 2

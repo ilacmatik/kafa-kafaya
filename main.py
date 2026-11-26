@@ -4225,8 +4225,6 @@ class App:
                 if e.type == pygame.KEYDOWN and e.key == getattr(pygame, "K_AC_BACK", -1):
                     # Android geri tusu = ESC
                     e = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE, unicode="", mod=0, scancode=0)
-                if touch.ANDROID and e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
-                    print("KAFA-FARE", e.type, getattr(e, "pos", None), "aktif", touch.active)
                 if touch.ENABLED:
                     if e.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
                         touch.finger_event(e)

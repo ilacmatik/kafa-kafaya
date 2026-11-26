@@ -80,8 +80,7 @@ def calibrate_mouse(pos):
     """Ilk parmak icin SDL ayrica fare olayi uretir (dogru donusturulmus). Ikisini
     karsilastirip parmak koordinatlarinin hangi uzayda geldigini ogreniriz."""
     global _calib, _last_down
-    if _last_down is None or _calib is not None:
-        return
+    return
     nx, ny = _last_down
     _last_down = None
     a = _to_logical(nx, ny, None)
@@ -96,12 +95,11 @@ def finger_event(e):
     """FINGERDOWN/MOTION/UP. True donerse olay tuketildi."""
     global _last_down
     fid = (getattr(e, "touch_id", 0), e.finger_id)
-    x, y = _to_logical(e.x, e.y, _calib if _calib == "win" else None)
+    # SDL (SCALED modunda) parmak konumunu zaten oyun alanina gore 0..1 verir
+    x, y = e.x * W, e.y * H
     if e.type == pygame.FINGERDOWN:
         _last_down = (e.x, e.y)
         act = _hit(x, y) if active else None
-        if ANDROID:
-            print("KAFA-DOKUN down n=(%.3f,%.3f) l=(%d,%d) aktif=%s eylem=%s kal=%s" % (e.x, e.y, x, y, active, act, _calib))
         fingers[fid] = [x, y, act]
         if act in PRESS_KEYS:
             _post_key(PRESS_KEYS[act])
@@ -117,8 +115,6 @@ def finger_event(e):
         return f[2] is not None
     if e.type == pygame.FINGERUP:
         f = fingers.pop(fid, None)
-        if ANDROID:
-            print("KAFA-DOKUN up", f)
         return bool(f and f[2])
     return False
 
