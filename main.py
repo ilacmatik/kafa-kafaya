@@ -2052,6 +2052,9 @@ class MatchScene(Scene, OnlineMixin):
         self.last_down = [-9.0, -9.0]
         self.remote = {"l": 0, "r": 0, "j": 0, "k": 0, "s": 0}
         self.snaps = []
+        self._lat = []          # varis - sunucu zamani farklari (gecikme + saat farki)
+        self._base = 0.0
+        self._delay = 0.07      # ara degerleme tamponu (sn), titremeye gore uyarlanir
         self.snap = None
         self.pending = pending or []
         self.parts = []
@@ -2257,10 +2260,15 @@ class MatchScene(Scene, OnlineMixin):
             first = False
         snap = w.snapshot()
         if self.conn:
-            msg = dict(snap)
-            msg["t"] = "st"
-            msg["ag"] = [1 if a else 0 for a in self.again]
-            self.conn.send(msg)
+            # telefonda 30/sn yeter (istemci zaman damgasiyla ara degerleme yapar), PC'de her kare
+            now_ = time.time()
+            if not touch.ANDROID or now_ - getattr(self, "_last_tx", 0) >= 1 / 32 or snap["ph"] != "play":
+                self._last_tx = now_
+                msg = dict(snap)
+                msg["t"] = "st"
+                msg["ht"] = round(now_, 4)
+                msg["ag"] = [1 if a else 0 for a in self.again]
+                self.conn.send(msg)
         self.snap = snap
         self._process(snap)
 
@@ -2279,7 +2287,22 @@ class MatchScene(Scene, OnlineMixin):
             if t == "st":
                 if self.mirror:
                     m = mirror_snap(m)
-                self.snaps.append((now, m))
+                ht = m.get("ht")
+                if ht is None:
+                    self._base = 0.0
+                    self.snaps.append((now, m))
+                else:
+                    # sunucu saatini yerel saate cevir: en kucuk gecikme = referans
+                    d = now - ht
+                    self._lat.append(d)
+                    self._lat = self._lat[-90:]
+                    base = min(self._lat)
+                    sl = sorted(x - base for x in self._lat)
+                    jit = sl[int(len(sl) * 0.9)] if sl else 0.0
+                    want = min(0.16, max(0.05, jit * 1.4 + 0.035))
+                    self._delay += (want - self._delay) * 0.05
+                    self._base = base
+                    self.snaps.append((ht, m))
                 self._process(m)
                 ag = m.get("ag")
                 if ag:
@@ -2298,10 +2321,10 @@ class MatchScene(Scene, OnlineMixin):
                 self.app.go(MessageScene(self.app, "RAKİP ÇIKTI", "Diğer oyuncu oyundan ayrıldı."))
                 return
         # yumusak goruntu: ~2 kare geriden ara degerleme
-        self.snaps = self.snaps[-12:]
+        self.snaps = self.snaps[-40:]
         if not self.snaps:
             return
-        rt = now - 0.035
+        rt = now - self._base - self._delay      # sunucu saatinde "simdi - tampon"
         s0 = s1 = None
         for k in range(len(self.snaps) - 1, -1, -1):
             if self.snaps[k][0] <= rt:

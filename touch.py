@@ -44,6 +44,7 @@ zones = []                 # [(rect, key, unicode)] - her karede yeniden dolduru
 active = False             # mac sahnesi kontrolleri cizdiyse True
 _edge = {}                 # kenardan cekme takibi: parmak id -> (x0, y0)
 _calib = None
+_wlock = None
 
 
 def _hit(x, y):
@@ -188,6 +189,16 @@ def android_multicast_lock():
         lock = wifi.createMulticastLock("kafakafaya")
         lock.setReferenceCounted(False)
         lock.acquire()
+        # Wi-Fi guc tasarrufu paketleri geciktirip oyunu takiltir: dusuk gecikme kilidi
+        global _wlock
+        for mode in (4, 3):      # WIFI_MODE_FULL_LOW_LATENCY (API 29+), FULL_HIGH_PERF
+            try:
+                _wlock = wifi.createWifiLock(mode, "kafakafaya-oyun")
+                _wlock.setReferenceCounted(False)
+                _wlock.acquire()
+                break
+            except Exception:
+                _wlock = None
         return lock
     except Exception:
         return None
