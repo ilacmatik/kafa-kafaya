@@ -21,11 +21,35 @@ if sys.platform == "win32":
             ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass
+# --- acilis gunlugu: hangi asamada kapandigini gormek icin ---
+_LOG_DIR = os.environ.get("ANDROID_PRIVATE") or os.path.expanduser("~")
+_LOG_PATH = os.path.join(_LOG_DIR, "kafakafaya_acilis.txt")
+try:
+    with open(_LOG_PATH, encoding="utf-8") as _f:
+        PREV_BOOT = _f.read()
+except Exception:
+    PREV_BOOT = ""
+try:
+    open(_LOG_PATH, "w", encoding="utf-8").close()
+except Exception:
+    pass
+
+
+def stage(name):
+    try:
+        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(name + "\n")
+    except Exception:
+        pass
+
+
+stage("python basladi")
 # tam ekranda buyutme yumusak (pikselli degil) olsun
 os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "1")
 os.environ.setdefault("SDL_HINT_RENDER_SCALE_QUALITY", "1")
 
 import pygame  # noqa: E402
+stage("pygame yuklendi %s" % getattr(getattr(pygame, "version", None), "ver", "?"))
 
 import fx  # noqa: E402
 import gfx  # noqa: E402
@@ -34,6 +58,7 @@ from sim import PEN_AIM_T, PEN_SHOT_T  # noqa: E402
 import net  # noqa: E402
 import sim  # noqa: E402
 import touch  # noqa: E402
+stage("moduller yuklendi")
 
 W, H = sim.W, sim.H
 FPS = 60
@@ -4073,18 +4098,34 @@ class App:
     def __init__(self):
         pygame.mixer.pre_init(22050, -16, 2, 512)
         pygame.init()
+        stage("pygame.init tamam")
         gfx.set_scale(self._pick_scale())
         PW, PH = int(W * gfx.K), int(H * gfx.K)
         flags = pygame.SCALED | pygame.RESIZABLE
-        try:
-            # varsayilan: tam ekran (F11 ile pencereye gecilir)
-            surf = pygame.display.set_mode((PW, PH), flags | pygame.FULLSCREEN)
-        except pygame.error:
+        if touch.ANDROID:
+            surf = None
+            for fl in (pygame.SCALED | pygame.FULLSCREEN, pygame.SCALED, pygame.FULLSCREEN, 0):
+                try:
+                    surf = pygame.display.set_mode((PW, PH), fl)
+                    stage("ekran acildi flags=%d boyut=%s pencere=%s" % (fl, surf.get_size(),
+                                                                         pygame.display.get_window_size()))
+                    break
+                except Exception as ex:
+                    stage("ekran acilamadi flags=%d: %r" % (fl, ex))
+            if surf is None:
+                raise RuntimeError("ekran acilamadi")
+        else:
             try:
-                surf = pygame.display.set_mode((PW, PH), flags)
+                # varsayilan: tam ekran (F11 ile pencereye gecilir)
+                surf = pygame.display.set_mode((PW, PH), flags | pygame.FULLSCREEN)
             except pygame.error:
-                surf = pygame.display.set_mode((PW, PH))
+                try:
+                    surf = pygame.display.set_mode((PW, PH), flags)
+                except pygame.error:
+                    surf = pygame.display.set_mode((PW, PH))
         self.screen = gfx.Canvas(surf)
+        if PREV_BOOT and "MENU ACILDI" not in PREV_BOOT:
+            show_report(self.screen, "ÖNCEKİ AÇILIŞ YARIDA KALDI", PREV_BOOT, wait=True)
         pygame.display.set_caption("Kafa Kafaya Futbol")
         try:
             pygame.display.set_icon(pygame.image.load(res("assets", "ball.png")))
@@ -4093,18 +4134,23 @@ class App:
         self.screen.fill(DARK)
         draw_text(self.screen, "Yükleniyor...", 40, (W // 2, H // 2))
         pygame.display.flip()
+        stage("gorseller yukleniyor")
         self.assets = Assets()
+        stage("gorseller tamam")
         global ASSETS
         ASSETS = self.assets
         if touch.ENABLED:
             self.assets.touch_btn, self.assets.touch_btn_on = make_touch_buttons()
+        stage("dokunmatik tamam")
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
         self.mirror = load_record().get("mirror", True)
         self.weather = 0
         self.series_len = 1     # 1: tek mac, 3: uc maclik seri
         self.series = None      # {"n": 3, "w": [benim, rakip]}
+        stage("taraftar tamam")
         self.sound = Sound()
+        stage("ses tamam")
         self.clock = pygame.time.Clock()
         self.running = True
         self.bot_level = 1
@@ -4114,7 +4160,9 @@ class App:
         self._lost_events = tuple(getattr(pygame, n) for n in ("WINDOWFOCUSLOST", "APP_WILLENTERBACKGROUND",
                                                                "WINDOWMINIMIZED") if hasattr(pygame, n))
         self._mlock = touch.android_multicast_lock()
+        stage("ag kilidi %s" % bool(self._mlock))
         self.scene = MenuScene(self)
+        stage("MENU ACILDI")
 
     @staticmethod
     def _pick_scale():
@@ -4223,12 +4271,54 @@ class App:
         pygame.quit()
 
 
+def show_report(screen, title, text, wait=True):
+    """Hata/gunluk metnini ekranda gosterir (telefonda ekran goruntusu alinabilsin diye)."""
+    try:
+        surf = screen.surf if hasattr(screen, "surf") else screen
+        try:
+            f = pygame.font.Font(res("assets", "fonts", FONT_FILES[False]), 18)
+        except Exception:
+            f = pygame.font.Font(None, 22)
+        lines = [ln for ln in text.replace("\r", "").split("\n") if ln.strip()][-26:]
+        surf.fill((20, 10, 14))
+        surf.blit(f.render(title + "  (ekran görüntüsü alıp gönderin - dokun: devam)", True, (255, 210, 60)),
+                  (16, 10))
+        y = 44
+        for ln in lines:
+            for i in range(0, len(ln), 110):
+                surf.blit(f.render(ln[i:i + 110], True, (235, 235, 240)), (16, y))
+                y += 22
+        pygame.display.flip()
+        t0 = time.time()
+        while wait and time.time() - t0 < 120:
+            for e in pygame.event.get():
+                if e.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN, pygame.QUIT) and time.time() - t0 > 1.0:
+                    return
+            time.sleep(0.03)
+    except Exception:
+        pass
+
+
 def main():
     try:
         App().run()
     except Exception:
         import traceback
-        path = os.path.join(os.path.expanduser("~"), "kafakafaya_hata.txt")
+        tb = traceback.format_exc()
+        stage("HATA:\n" + tb)
+        try:
+            scr = pygame.display.get_surface()
+            if scr is None:
+                scr = pygame.display.set_mode((1280, 720), pygame.SCALED | pygame.FULLSCREEN)
+            log = ""
+            try:
+                log = open(_LOG_PATH, encoding="utf-8").read()
+            except Exception:
+                pass
+            show_report(scr, "OYUN HATA VERDİ", log or tb, wait=True)
+        except Exception:
+            pass
+        path = os.path.join(_LOG_DIR, "kafakafaya_hata.txt")
         try:
             with open(path, "w", encoding="utf-8") as f:
                 traceback.print_exc(file=f)
