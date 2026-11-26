@@ -737,6 +737,8 @@ class Assets:
         self.menu_bg_dark = gfx.Img(mbd)
         self.select_bg = gfx.Img(pygame.transform.smoothscale(
             pygame.image.load(res("assets", "select_bg.jpg")).convert(), (int(W * k), int(H * k))))
+        if LOAD_CB:
+            LOAD_CB(25, "Kaleler kuruluyor")
         self.idle, self.kick, self.idle_ice, self.kick_ice = [], [], [], []
         self.big, self.portrait = [], []
         self.big_celeb = []
@@ -780,6 +782,8 @@ class Assets:
             self.menu_char.append(scaled(idle, 300 / idle.get_height()))
             self.portrait.append(self._round_portrait(idle, 66))
             self.portrait_big.append(self._round_portrait(idle, 100))
+        if LOAD_CB:
+            LOAD_CB(50, "Oyuncular ısınıyor")
         d = sim.BALL_R * 2 + 2
         self.ball = S(L("ball.png"), d, d)
         self.ball_fire = self._fit(L("ball_fire.png"), int(d * 1.45))
@@ -817,6 +821,8 @@ class Assets:
         # arayuz parcalari
         self.ui_raw = {n: L(n + ".png") for n in ("ui_btn", "ui_btn_hot", "ui_btn_blue", "ui_panel",
                                                     "m2_gold", "m2_navy")}
+        self.vs_bg = gfx.from_surface(pygame.image.load(res("assets", "vs_bg.jpg")).convert(), (W, H))
+        self.vs_emblem = self._fit(L("vs_emblem.png"), 250)
         self.m2_bg = gfx.from_surface(pygame.image.load(res("assets", "m2_bg.jpg")).convert(), (W, H))
         self.m2_round = self._fit(L("m2_round.png"), 78)
         self.m2_ic = {n: self._fit(L("m2_ic_%s.png" % n), 50) for n in
@@ -872,6 +878,8 @@ class Assets:
                 if v is not None:
                     dct[i] = v
         self._sel_cache = {}
+        if LOAD_CB:
+            LOAD_CB(65, "Top şişiriliyor")
         self.sel_heroes = []
         for i in range(6):
             raw = L("sel_hero%d.png" % i)
@@ -2123,8 +2131,10 @@ class MatchScene(Scene, OnlineMixin):
         self.conn = conn
         self.level = level
         self.world = None
+        self.intro = 2.8          # mac oncesi VS ekrani (sn)
         if mode != "client":
             self.world = sim.World(chars[0], chars[1], dur, weather=self.weather)
+            self.world.phase_t += self.intro      # geri sayim VS ekranindan sonra baslar
         self.bot = sim.Bot(1, level) if mode == "bot" else None
         self.acc = 0.0
         self.counts = [[0, 0, 0], [0, 0, 0]]    # [sut, super, omuz] yerel basis sayaclari
@@ -3139,8 +3149,75 @@ class MatchScene(Scene, OnlineMixin):
 
     def draw(self, screen):
         self._draw_main(screen)
+        if self.t < self.intro:
+            self._draw_intro(screen)
+            touch.release_all()
+            return
         if touch.ENABLED:
             self._draw_touch(screen)
+
+    def _draw_intro(self, s):
+        """Karsilasma ekrani: iki karakter yanlardan kayarak gelir, ortada VS amblemi."""
+        A = self.app.assets
+        t = self.t
+        fade = max(0.0, min(1.0, (self.intro - t) / 0.35))
+        bg = A.vs_bg
+        bg.set_alpha(int(255 * fade))
+        s.blit(bg, (0, 0))
+        bg.set_alpha(255)
+        if fade < 1:
+            return
+        k = min(1.0, t / 0.45)
+        ease = 1 - (1 - k) ** 3
+        if self.mode == "local2":
+            tags = ("1. OYUNCU", "2. OYUNCU")
+        elif self.mode == "bot":
+            tags = ("SEN", "BİLGİSAYAR")
+        elif self.mode == "client" and not self.mirror:
+            tags = ("RAKİP", "SEN")
+        else:
+            tags = ("SEN", "RAKİP")
+        for side in (0, 1):
+            c = self.chars[side]
+            img = A.menu_char[c]
+            if side == 1:
+                img = A.flipped(img)
+            d = -1 if side == 0 else 1
+            x = W / 2 + d * 330 + d * 520 * (1 - ease)
+            bob = math.sin(t * 3 + side) * 3
+            fx.blit_glow(s, x, 440, 200, (40, 70, 140) if side == 0 else (140, 40, 40))
+            s.blit(img, img.get_rect(midbottom=(x, 560 + bob)))
+            plate = pygame.Rect(0, 0, 300, 54)
+            plate.center = (x, 600)
+            pill(s, plate, (14, 18, 40), radius=20)
+            gd.rect(s, P_COLORS[side], plate, 3, border_radius=20)
+            draw_text(s, sim.DISPLAY_NAMES[c], 30, (plate.centerx, plate.centery - 1), WHITE, outline=3)
+            chip = pygame.Rect(0, 0, 150 if len(tags[side]) > 4 else 90, 28)
+            chip.center = (x, 646)
+            pill(s, chip, P_COLORS[side], radius=12)
+            draw_text(s, tags[side], 16, (chip.centerx, chip.centery - 1), WHITE, outline=2)
+            pw = sim.CHARACTERS[c]["power"]
+            draw_text(s, POWERS[pw][0], 18, (x, 684), POWERS[pw][1], outline=3)
+        # VS amblemi: biraz gecikmeyle carparak gelir
+        kv = max(0.0, min(1.0, (t - 0.35) / 0.3))
+        if kv > 0:
+            sc = 1 + 1.6 * (1 - kv) ** 2 + 0.04 * math.sin(t * 6)
+            em = tf.rotozoom(A.vs_emblem, 0, sc) if abs(sc - 1) > 0.01 else A.vs_emblem
+            fx.blit_glow(s, W // 2, 330, 160, (90, 70, 20))
+            s.blit(em, em.get_rect(center=(W // 2, 330)))
+        draw_text(s, self._intro_title(), 34, (W // 2, 70), WHITE, outline=5)
+
+    def _intro_title(self):
+        try:
+            if self.cup is not None:
+                st = CUP_STAGES[self.cup["stage"]]
+                return "TURNUVA · " + (st[0] if isinstance(st, (tuple, list)) else str(st))
+            sr = self.app.series
+            if sr and sr.get("n", 1) > 1:
+                return "SERİ · %d. MAÇ" % (sum(sr["w"]) + 1)
+        except Exception:
+            pass
+        return "RAKİP HAZIR"
 
     def _draw_touch(self, s):
         snap = self.snap
@@ -4225,6 +4302,51 @@ class TrophyScene(Scene):
 
 
 # ====================================================================== uygulama
+_LD = {}
+LOAD_CB = None
+
+
+def draw_loading(screen, pct, msg):
+    """Yukleme ekrani: stadyum, logo, iki yanda karakter, alt cubuk."""
+    try:
+        if not _LD:
+            ld = pygame.image.load(res("assets", "ld_bg.jpg")).convert()
+            _LD["bg"] = gfx.from_surface(ld, (W, H))
+            lg = pygame.image.load(res("assets", "logo.png")).convert_alpha()
+            f = 520 / lg.get_width()
+            _LD["logo"] = gfx.from_surface(lg, (lg.get_width() * f, lg.get_height() * f))
+            a = random.randrange(6)
+            b = (a + 1 + random.randrange(5)) % 6
+            ch = []
+            for c in (a, b):
+                im = pygame.image.load(res("assets", "p%d_idle.png" % c)).convert_alpha()
+                f = 330 / im.get_height()
+                ch.append(gfx.from_surface(im, (im.get_width() * f, 330)))
+            _LD["ch"] = ch
+        screen.blit(_LD["bg"], (0, 0))
+        lg = _LD["logo"]
+        screen.blit(lg, lg.get_rect(center=(W // 2, 250)))
+        l_, r_ = _LD["ch"]
+        screen.blit(l_, l_.get_rect(midbottom=(250, 650)))
+        rf = _LD.get("chf")
+        if rf is None:
+            rf = _LD["chf"] = tf.flip(r_, True, False)
+        screen.blit(rf, rf.get_rect(midbottom=(W - 250, 650)))
+        draw_text(screen, msg, 20, (W // 2, 636), WHITE, outline=3)
+        bar = pygame.Rect(W // 2 - 200, 654, 400, 28)
+        gd.rect(screen, (14, 30, 22), bar, 0, border_radius=14)
+        fill = bar.inflate(-6, -6)
+        fill.w = max(14, int(fill.w * max(0.0, min(1.0, pct / 100))))
+        gd.rect(screen, (120, 210, 60), fill, 0, border_radius=11)
+        gd.rect(screen, (190, 240, 120), (fill.x + 4, fill.y + 2, max(4, fill.w - 8), 6), 0, border_radius=3)
+        gd.rect(screen, (240, 245, 235), bar, 3, border_radius=14)
+        draw_text(screen, "Yükleniyor %%%d" % int(pct), 18, bar.center, WHITE, outline=3)
+        pygame.display.flip()
+        pygame.event.pump()
+    except Exception:
+        pass
+
+
 TOUCH_COLS = {"j": (40, 170, 80), "k": (220, 60, 60),
               "d": (235, 130, 30), "o": (140, 70, 200), "s": (220, 170, 30), "p": (90, 100, 120)}
 TOUCH_LABELS = {"j": "ZIPLA", "k": "ŞUT", "d": "AŞIRTMA", "o": "OMUZ", "s": "SÜPER"}
@@ -4369,9 +4491,9 @@ class App:
             pygame.display.set_icon(pygame.image.load(res("assets", "ball.png")))
         except Exception:
             pass
-        self.screen.fill(DARK)
-        draw_text(self.screen, "Yükleniyor...", 40, (W // 2, H // 2))
-        pygame.display.flip()
+        global LOAD_CB
+        LOAD_CB = lambda pct, msg: draw_loading(self.screen, pct, msg)   # noqa: E731
+        draw_loading(self.screen, 4, "Stadyum hazırlanıyor")
         stage("gorseller yukleniyor")
         self.assets = Assets()
         stage("gorseller tamam")
@@ -4381,6 +4503,7 @@ class App:
             self.assets.touch_btn, self.assets.touch_btn_on = make_touch_buttons()
             make_joystick(self.assets)
         stage("dokunmatik tamam")
+        draw_loading(self.screen, 78, "Taraftarlar tribüne geliyor")
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
         self.mirror = load_record().get("mirror", True)
@@ -4388,6 +4511,7 @@ class App:
         self.series_len = 1     # 1: tek mac, 3: uc maclik seri
         self.series = None      # {"n": 3, "w": [benim, rakip]}
         stage("taraftar tamam")
+        draw_loading(self.screen, 92, "Spiker hazırlanıyor")
         self.sound = Sound()
         stage("ses tamam")
         self.clock = pygame.time.Clock()
@@ -4404,6 +4528,8 @@ class App:
             net.GATEWAYS = touch.android_gateways
         stage("ag kilidi %s" % bool(self._mlock))
         self.scene = MenuScene(self)
+        draw_loading(self.screen, 100, "Hazır!")
+        LOAD_CB = None
         stage("MENU ACILDI")
 
     @staticmethod
