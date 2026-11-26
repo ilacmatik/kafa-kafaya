@@ -88,16 +88,19 @@ ICE_C = (110, 220, 255)
 KEYS_SOLO = {
     "l": (pygame.K_a, pygame.K_LEFT), "r": (pygame.K_d, pygame.K_RIGHT),
     "j": (pygame.K_w, pygame.K_UP), "k": (pygame.K_SPACE, pygame.K_k),
-    "s": (pygame.K_q,), "o": (pygame.K_e, pygame.K_RCTRL), "d": (pygame.K_s, pygame.K_DOWN),
+    "s": (pygame.K_r,), "o": (pygame.K_e, pygame.K_RCTRL), "d": (pygame.K_s, pygame.K_DOWN),
+    "f": (pygame.K_q, pygame.K_f),        # tek tusla asirtma vurusu
 }
 KEYS_P1 = {
     "l": (pygame.K_a,), "r": (pygame.K_d,), "j": (pygame.K_w,),
-    "k": (pygame.K_SPACE,), "s": (pygame.K_q,), "o": (pygame.K_e,), "d": (pygame.K_s,),
+    "k": (pygame.K_SPACE,), "s": (pygame.K_r,), "o": (pygame.K_e,), "d": (pygame.K_s,),
+    "f": (pygame.K_q, pygame.K_f),
 }
 KEYS_P2 = {
     "l": (pygame.K_LEFT,), "r": (pygame.K_RIGHT,), "j": (pygame.K_UP,),
     "k": (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_KP0), "s": (pygame.K_RSHIFT, pygame.K_KP1),
     "o": (pygame.K_RCTRL, pygame.K_KP2), "d": (pygame.K_DOWN,),
+    "f": (pygame.K_SLASH, pygame.K_KP3),
 }
 WEATHERS = [("clear", "AÇIK HAVA"), ("rain", "YAĞMUR"), ("snow", "KAR"), ("wind", "RÜZGAR"), ("random", "RASTGELE")]
 
@@ -1367,14 +1370,14 @@ class HelpScene(Scene):
             ("Hareket", "A / D  veya  ← / →"),
             ("Zıpla", "W  veya  ↑"),
             ("Şut", "BOŞLUK  (basılı tut = şarjlı şut)"),
-            ("Aşırtma", "Şut atarken S / ↓ basılı olsun"),
+            ("Aşırtma vuruşu", "Q  veya  F  (ya da şut atarken S / ↓ basılı)"),
             ("Çift zıplama", "havadayken tekrar W / ↑"),
-            ("Süper güç", "S / ↓ iki kez hızlı bas  (bar dolunca)"),
+            ("Süper güç", "R  veya  S / ↓ iki kez hızlı  (bar dolunca)"),
             ("Omuz / kayarak müdahale", "E (dururken omuz, koşarken kayma)"),
             ("Gizle", "P  (küçült + sesi kapat)"),
             ("TEK PC 2 KİŞİ", None),
-            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, S aşırtma, S-S süper, E omuz"),
-            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, ↓ aşırtma, ↓-↓ süper, Sağ CTRL omuz"),
+            ("1. Oyuncu", "A/D, W zıpla, BOŞLUK şut, Q/F aşırtma, R veya S-S süper, E omuz"),
+            ("2. Oyuncu", "←/→, ↑ zıpla, ENTER şut, / aşırtma, ↓-↓ süper, Sağ CTRL omuz"),
         ]
         y = 168
         for a, b in rows:
@@ -2140,6 +2143,7 @@ class MatchScene(Scene, OnlineMixin):
         self.counts = [[0, 0, 0], [0, 0, 0]]    # [sut, super, omuz] yerel basis sayaclari
         self.used = [[0, 0, 0], [0, 0, 0]]
         self.last_down = [-9.0, -9.0]
+        self.lob_until = [-9.0, -9.0]
         self.remote = {"l": 0, "r": 0, "j": 0, "k": 0, "s": 0}
         self.snaps = []
         self._lat = []          # varis - sunucu zamani farklari (gecikme + saat farki)
@@ -2252,6 +2256,10 @@ class MatchScene(Scene, OnlineMixin):
                 self.counts[i][1] += 1
             if k in m["o"]:
                 self.counts[i][2] += 1
+            if k in m.get("f", ()):
+                # tek tus asirtma: sut + kisa sure "asagi" basili sayilir
+                self.counts[i][0] += 1
+                self.lob_until[i] = self.t + 0.25
             if k in m["d"]:
                 # asagi tusuna iki kez hizli basmak: super guc
                 if self.t - self.last_down[i] < 0.35:
@@ -2283,6 +2291,8 @@ class MatchScene(Scene, OnlineMixin):
 
     def _local_input(self, i, keymap, first):
         h = self._held(keymap)
+        if self.t < self.lob_until[i]:
+            h["d"] = True
         kp = sp = op = False
         if first:
             kp = self.counts[i][0] > self.used[i][0]
@@ -2368,6 +2378,8 @@ class MatchScene(Scene, OnlineMixin):
 
     def _update_client(self, dt):
         h = self._held(KEYS_SOLO)
+        if self.t < self.lob_until[1]:
+            h["d"] = True
         if self.mirror:
             h["l"], h["r"] = h["r"], h["l"]
         self.conn.send({"t": "in", "ct": round(time.time(), 4), "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),

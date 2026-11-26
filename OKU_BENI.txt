@@ -38,7 +38,8 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Şut       : BOŞLUK  (basılı tutup bırak = şarjlı, daha sert şut)
   Çift zıpla: havadayken tekrar W / Yukarı ok
   Aşırtma   : şut atarken S / Aşağı ok basılı olsun
-  Süper güç : S / Aşağı ok'a iki kez hızlıca bas (bar dolunca)
+  Aşırtma   : Q veya F (tek tuşla aşırtma vuruşu)
+  Süper güç : R ya da S / Aşağı ok'a iki kez hızlıca bas (bar dolunca)
   Tam ekran : F11      Ses: M      Duraklat/çık: ESC
   Omuz at   : E  veya  Sağ CTRL, dururken (ağır karakter hafifi savurur)
   Kayarak müdahale: koşarken E (topu kapar, rakibi düşürür)
@@ -46,8 +47,8 @@ Kurulum yok, internet gerekmez: tek dosya KafaKafaya.exe.
   Gizle     : P  (oyunu simge durumuna küçültür, sesi kapatır)
 
   Tek PC 2 kişi modunda:
-  1. oyuncu: A/D, W zıpla, BOŞLUK şut, S aşırtma, S-S süper
-  2. oyuncu: oklar, Yukarı zıpla, ENTER şut, Aşağı aşırtma, Aşağı-Aşağı süper
+  1. oyuncu: A/D, W zıpla, BOŞLUK şut, Q/F aşırtma, R veya S-S süper
+  2. oyuncu: oklar, Yukarı zıpla, ENTER şut, / aşırtma, Aşağı-Aşağı süper
 
   - Koşarak şut: alçak ve sert, falsolu. Geri giderken şut: yüksek aşırtma.
   - Top ayağın altındaysa havalanır, dizdeyse sert gider, havadaysa vole olur.

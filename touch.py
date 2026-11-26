@@ -30,7 +30,7 @@ BUTTONS = {
 }
 # asirtma dugmesi: asagi (asirtma) basili tutulurken sut basilir -> tek dokunusla asirtma vurusu.
 # (eskiden asagi tusu gonderiyordu; iki kez basinca super ile karisiyordu)
-PRESS_KEYS = {"k": pygame.K_SPACE, "s": pygame.K_q, "o": pygame.K_e, "d": pygame.K_SPACE, "p": pygame.K_ESCAPE}
+PRESS_KEYS = {"k": pygame.K_SPACE, "s": pygame.K_r, "o": pygame.K_e, "d": pygame.K_SPACE, "p": pygame.K_ESCAPE}
 
 # --- joystick ---
 JOY_HOME = (150, 640)      # bos dururken tabanin yeri
