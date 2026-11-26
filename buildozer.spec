@@ -4,10 +4,10 @@ package.name = kafakafaya
 package.domain = org.ilacmatik
 source.dir = .
 source.include_exts = py,png,jpg,json,ttf,txt,ico
-source.exclude_dirs = .github,bin,.buildozer,__pycache__,tools,dist,build
+source.exclude_dirs = p4a_recipes,.github,bin,.buildozer,__pycache__,tools,dist,build
 source.exclude_patterns = ci_smoke.py,build.bat,README.md,OKU_BENI.txt,requirements.txt,android_icon.png,android_presplash.png
 version = 1.0
-requirements = python3,pygame==2.1.3,pyjnius
+requirements = python3,pygame,pyjnius
 icon.filename = %(source.dir)s/android_icon.png
 presplash.filename = %(source.dir)s/android_presplash.png
 android.presplash_color = #0C1022
@@ -22,6 +22,7 @@ android.accept_sdk_license = True
 android.allow_backup = False
 p4a.bootstrap = sdl2
 p4a.branch = v2024.01.21
+p4a.local_recipes = ./p4a_recipes
 android.ndk = 25b
 
 [buildozer]
