@@ -46,9 +46,9 @@ jobs:
             adb shell input tap 100 200
             sleep 12
             adb exec-out screencap -p > emu_ekran3.png || true
-            adb shell "input swipe 151 276 152 276 5000 & sleep 3.5; screencap -p /sdcard/e4.png; wait" || true
+            adb shell "input swipe 102 284 150 284 5000 & sleep 3.5; screencap -p /sdcard/e4.png; wait" || true
             adb pull /sdcard/e4.png emu_ekran4.png || true
-            adb shell "input swipe 81 276 82 276 5000 & sleep 3.5; screencap -p /sdcard/e5.png; wait" || true
+            adb shell "input swipe 102 284 50 284 5000 & sleep 3.5; screencap -p /sdcard/e5.png; wait" || true
             adb pull /sdcard/e5.png emu_ekran5.png || true
             adb logcat -d > logcat2.txt || true
       - name: Log ozeti
