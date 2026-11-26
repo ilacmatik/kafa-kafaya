@@ -1,10 +1,14 @@
 """Dokunmatik kontroller (Android ve KAFA_DOKUNMATIK=1 ile PC'de deneme).
 
-- Mac icinde ekran dugmeleri: sol/sag (basili tut, kaydirilabilir), ziplama, sut,
-  asirtma, omuz/kayma, super, duraklat.
-- Menulerde/ara ekranlarda "dokunma alanlari": sahne cizerken kaydedilir, dokununca
-  ilgili klavye tusu olayi uretilir (oyunun geri kalani klavye mantigiyla calisir).
+Mac icinde:
+- Solda serbest joystick (PUBG gibi): sol alt bolgeye nereye dokunursan orada acilir,
+  surukle: sola/saga kos, yukari it: zipla (basili tutulan ziplama gibi).
+- Sagda PUBG tarzi dugme kumesi: buyuk SUT, cevresinde ZIPLA, ASIRT, SUPER, OMUZ.
+- Ustte duraklat.
+Her ekranda: ekranin sol/sag kenarindan iceri cekmek = geri (ESC).
+Menulerde "dokunma alanlari": sahne cizerken kaydedilir, dokununca klavye tusu uretilir.
 """
+import math
 import os
 import sys
 
@@ -14,54 +18,60 @@ ANDROID = "ANDROID_ARGUMENT" in os.environ or hasattr(sys, "getandroidapilevel")
 ENABLED = ANDROID or os.environ.get("KAFA_DOKUNMATIK") == "1"
 
 W, H = 1280, 720
+CAM_UP = 130 if ENABLED else 0     # mac sahnesi bu kadar yukari kayar, altta kontrol seridi kalir
 
-# eylem -> (x, y, yaricap) mantiksal koordinat
+# --- sag dugme kumesi: eylem -> (x, y, yaricap) ---
 BUTTONS = {
-    "l": (104, 622, 66),
-    "r": (262, 622, 66),
-    "j": (1038, 636, 60),
-    "k": (1182, 592, 72),
-    "d": (1190, 444, 50),     # asirtma
-    "o": (902, 656, 46),      # omuz / kayma
-    "s": (1050, 492, 50),     # super
-    "p": (640, 136, 24),      # duraklat
+    "k": (1188, 650, 60),     # sut (buyuk)
+    "j": (1068, 674, 44),     # zipla
+    "d": (1082, 574, 40),     # asirtma
+    "s": (1198, 548, 38),     # super
+    "o": (962, 678, 38),      # omuz / kayma
+    "p": (640, 128, 24),      # duraklat
 }
-# tek seferlik basmalar -> uretilecek tus
 PRESS_KEYS = {"k": pygame.K_SPACE, "s": pygame.K_q, "o": pygame.K_e, "d": pygame.K_s, "p": pygame.K_ESCAPE}
-SLIDE = ("l", "r")            # parmak kaydirilinca degisebilen dugmeler
 
-fingers = {}                  # parmak id -> [x, y, eylem]
-zones = []                    # [(rect, key, unicode)] - her karede yeniden doldurulur
-active = False                # mac sahnesi dugmeleri cizdiyse True
-_calib = None                 # None: SDL mantiksal koordinat verir varsayimi, "win": pencere koordinati
-_last_down = None
+# --- joystick ---
+JOY_HOME = (150, 640)      # bos dururken tabanin yeri
+JOY_R = 74                 # tabanin yaricapi (topuz bu kadar uzaklasabilir)
+JOY_ZONE = pygame.Rect(0, 360, 520, 360)   # bu bolgeye dokunus joystick'i acar
+DEAD = 0.28                # olu bolge (yaricapin orani)
+JUMP_T = 0.55              # yukari itme esigi
 
-
-def _to_logical(nx, ny, mode):
-    if mode == "win":
-        try:
-            ww, wh = pygame.display.get_window_size()
-        except Exception:
-            return nx * W, ny * H
-        s = min(ww / W, wh / H)
-        ox, oy = (ww - W * s) / 2, (wh - H * s) / 2
-        return (nx * ww - ox) / s, (ny * wh - oy) / s
-    return nx * W, ny * H
+fingers = {}               # parmak id -> [x, y, eylem]
+joy = None                 # {"id", "cx", "cy", "kx", "ky"}
+zones = []                 # [(rect, key, unicode)] - her karede yeniden doldurulur
+active = False             # mac sahnesi kontrolleri cizdiyse True
+_edge = {}                 # kenardan cekme takibi: parmak id -> (x0, y0)
+_calib = None
 
 
-def _hit(x, y, only=None):
+def _hit(x, y):
     best, bd = None, 1e9
     for a, (bx, by, r) in BUTTONS.items():
-        if only and a not in only:
-            continue
-        d = ((x - bx) ** 2 + (y - by) ** 2) ** 0.5
-        if d < r * 1.3 and d < bd:
+        d = math.hypot(x - bx, y - by)
+        if d < r * 1.25 and d < bd:
             best, bd = a, d
     return best
 
 
+def joy_vec():
+    """(-1..1, -1..1) topuz yonu; joystick bos ise (0, 0)."""
+    if not joy:
+        return 0.0, 0.0
+    return (joy["kx"] - joy["cx"]) / JOY_R, (joy["ky"] - joy["cy"]) / JOY_R
+
+
 def held():
-    return {f[2] for f in fingers.values() if f[2]}
+    h = {f[2] for f in fingers.values() if f[2]}
+    vx, vy = joy_vec()
+    if vx < -DEAD:
+        h.add("l")
+    elif vx > DEAD:
+        h.add("r")
+    if vy < -JUMP_T:
+        h.add("j")
+    return h
 
 
 def _post_key(key, uni=""):
@@ -77,73 +87,93 @@ def zone_hit(pos):
 
 
 def calibrate_mouse(pos):
-    """Ilk parmak icin SDL ayrica fare olayi uretir (dogru donusturulmus). Ikisini
-    karsilastirip parmak koordinatlarinin hangi uzayda geldigini ogreniriz."""
-    global _calib, _last_down
     return
-    nx, ny = _last_down
-    _last_down = None
-    a = _to_logical(nx, ny, None)
-    b = _to_logical(nx, ny, "win")
-    da = abs(a[0] - pos[0]) + abs(a[1] - pos[1])
-    db = abs(b[0] - pos[0]) + abs(b[1] - pos[1])
-    if abs(da - db) > 6:
-        _calib = "logical" if da < db else "win"
 
 
-def finger_event(e):
-    """FINGERDOWN/MOTION/UP. True donerse olay tuketildi."""
-    global _last_down
-    fid = (getattr(e, "touch_id", 0), e.finger_id)
-    # SDL (SCALED modunda) parmak konumunu zaten oyun alanina gore 0..1 verir
-    x, y = e.x * W, e.y * H
-    if e.type == pygame.FINGERDOWN:
-        _last_down = (e.x, e.y)
-        act = _hit(x, y) if active else None
+def _joy_move(x, y):
+    dx, dy = x - joy["cx"], y - joy["cy"]
+    d = math.hypot(dx, dy)
+    if d > JOY_R:
+        dx, dy = dx * JOY_R / d, dy * JOY_R / d
+    joy["kx"], joy["ky"] = joy["cx"] + dx, joy["cy"] + dy
+
+
+def _down(fid, x, y):
+    global joy
+    if not active and (x < W * 0.03 or x > W * 0.97):
+        _edge[fid] = (x, y)
+    if not active:
+        return False
+    act = _hit(x, y)
+    if act:
         fingers[fid] = [x, y, act]
         if act in PRESS_KEYS:
             _post_key(PRESS_KEYS[act])
-        return act is not None
-    if e.type == pygame.FINGERMOTION:
-        f = fingers.get(fid)
-        if f is None:
-            return False
+        return True
+    if joy is None and JOY_ZONE.collidepoint(x, y):
+        # serbest joystick: dokunulan yerde acilir (kenarlara tasmasin)
+        cx = min(max(x, JOY_R + 12), JOY_ZONE.right - JOY_R)
+        cy = min(max(y, JOY_ZONE.top + JOY_R), H - JOY_R - 8)
+        joy = {"id": fid, "cx": cx, "cy": cy, "kx": cx, "ky": cy}
+        _joy_move(x, y)
+        return True
+    return False
+
+
+def _move(fid, x, y):
+    if joy and joy["id"] == fid:
+        _joy_move(x, y)
+        return True
+    f = fingers.get(fid)
+    if f:
         f[0], f[1] = x, y
-        if active and f[2] in SLIDE:
-            # sol/sag arasinda parmagi kaldirmadan gecis; disari kayinca son yon korunur
-            f[2] = _hit(x, y, SLIDE) or f[2]
-        return f[2] is not None
+        return True
+    return False
+
+
+def _up(fid, x, y):
+    global joy
+    e0 = _edge.pop(fid, None)
+    if e0 is not None and abs(x - e0[0]) > 140 and abs(y - e0[1]) < 160:
+        _post_key(pygame.K_ESCAPE)          # kenardan iceri cekme = geri
+    if joy and joy["id"] == fid:
+        joy = None
+        return True
+    return fingers.pop(fid, None) is not None
+
+
+def finger_event(e):
+    """FINGERDOWN/MOTION/UP. SDL (SCALED) konumu oyun alanina gore 0..1 verir."""
+    fid = (getattr(e, "touch_id", 0), e.finger_id)
+    x, y = e.x * W, e.y * H
+    if e.type == pygame.FINGERDOWN:
+        return _down(fid, x, y)
+    if e.type == pygame.FINGERMOTION:
+        return _move(fid, x, y)
     if e.type == pygame.FINGERUP:
-        f = fingers.pop(fid, None)
-        return bool(f and f[2])
+        return _up(fid, x, y)
     return False
 
 
 # PC'de fareyle deneme (KAFA_DOKUNMATIK=1): fare tek parmak gibi davranir
 def mouse_event(e):
-    if ANDROID or not active:
+    if ANDROID:
         return False
     fid = ("mouse", 0)
     if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-        act = _hit(*e.pos)
-        if act:
-            fingers[fid] = [e.pos[0], e.pos[1], act]
-            if act in PRESS_KEYS:
-                _post_key(PRESS_KEYS[act])
-            return True
-    elif e.type == pygame.MOUSEMOTION and fid in fingers:
-        f = fingers[fid]
-        if f[2] in SLIDE:
-            f[2] = _hit(*e.pos, only=SLIDE) or f[2]
-        return True
-    elif e.type == pygame.MOUSEBUTTONUP and e.button == 1 and fid in fingers:
-        fingers.pop(fid)
-        return True
+        return _down(fid, *e.pos)
+    if e.type == pygame.MOUSEMOTION and (fid in fingers or (joy and joy["id"] == fid)):
+        return _move(fid, *e.pos)
+    if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+        return _up(fid, *e.pos)
     return False
 
 
 def release_all():
+    global joy
     fingers.clear()
+    _edge.clear()
+    joy = None
 
 
 def android_multicast_lock():

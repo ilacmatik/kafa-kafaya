@@ -2445,7 +2445,7 @@ class MatchScene(Scene, OnlineMixin):
                 who = int(parts_[1])
                 pp = snap["p"][who]
                 pcol = POWERS[name][1]
-                self.floaters.append([POWERS[name][0] + "!", pp[0], pp[1] - 210, 1.4, pcol])
+                self.floaters.append([POWERS[name][0] + "!", pp[0], pp[1] - 210 - touch.CAM_UP, 1.4, pcol])
                 self.crowd.kick(0.6)
                 if name == "magnet":
                     snd.play("armed", 0)
@@ -2484,14 +2484,14 @@ class MatchScene(Scene, OnlineMixin):
                 pp = snap["p"][who]
                 snd.play("block", 0.05)
                 snd.play("cheer", 0.3, 0.8)
-                self.floaters.append(["RÖVAŞATA!", pp[0], pp[1] - 220, 1.5, GOLD])
+                self.floaters.append(["RÖVAŞATA!", pp[0], pp[1] - 220 - touch.CAM_UP, 1.5, GOLD])
                 self._burst(bx, by, 24, [WHITE, GOLD, (255, 220, 140)], 420, 0.45, 3, 300, "spark", 0)
                 self._ring(bx, by, 90, GOLD, 0.35)
                 self.pops.append(["fx_starburst", bx, by, 120, 0.35])
                 self.crowd.kick(0.8)
                 self.shake = max(self.shake, 0.25)
             elif name == "doksan_out":
-                self.floaters.append(["DİREKTEN DÖNDÜ!", bx, by - 50, 1.4, (255, 230, 150)])
+                self.floaters.append(["DİREKTEN DÖNDÜ!", bx, by - 50 - touch.CAM_UP, 1.4, (255, 230, 150)])
                 snd.play("ooh", 0.3)
                 self.crowd.kick(0.8)
             elif name == "slide":
@@ -2666,7 +2666,7 @@ class MatchScene(Scene, OnlineMixin):
             elif name == "block":
                 self._burst(bx, by, 22, [WHITE, GOLD], 400, 0.5, 4, 300, "spark", 0)
                 self._ring(bx, by, 80, WHITE, 0.3)
-                self.floaters.append(["KURTARIŞ!", bx, by - 40, 1.2, WHITE])
+                self.floaters.append(["KURTARIŞ!", bx, by - 40 - touch.CAM_UP, 1.2, WHITE])
                 snd.play("ooh", 0.5)
                 crowd.kick(0.75)
             elif name == "shield":
@@ -2680,7 +2680,7 @@ class MatchScene(Scene, OnlineMixin):
                 snd.play("pu", 0)
                 who = int(who)
                 p = snap["p"][who]
-                self.floaters.append([PU_TEXT.get(kind, kind), p[0], p[1] - 200, 1.6, P_COLORS[who]])
+                self.floaters.append([PU_TEXT.get(kind, kind), p[0], p[1] - 200 - touch.CAM_UP, 1.6, P_COLORS[who]])
                 self._burst(bx, by, 24, [GOLD, WHITE, (120, 255, 200)], 320, 0.6, 4, 100, "snow", 0)
                 self._ring(bx, by, 70, GOLD, 0.35)
         # oyuncu durum gecisleri: inis/ziplama/buz cozulmesi
@@ -3047,6 +3047,17 @@ class MatchScene(Scene, OnlineMixin):
         touch.active = True
         A = self.app.assets
         hd = touch.held()
+        # joystick: bossa evde soluk, tutuluyorsa parmagin acildigi yerde
+        j = touch.joy
+        if j:
+            cx, cy, kx, ky = j["cx"], j["cy"], j["kx"], j["ky"]
+            base, knob = A.joy_base_on, A.joy_knob_on
+        else:
+            cx, cy = touch.JOY_HOME
+            kx, ky = cx, cy
+            base, knob = A.joy_base, A.joy_knob
+        s.blit(base, base.get_rect(center=(cx, cy)))
+        s.blit(knob, knob.get_rect(center=(kx, ky)))
         for act, (x, y, r) in touch.BUTTONS.items():
             on = act in hd
             im = (A.touch_btn_on if on else A.touch_btn)[act]
@@ -3156,13 +3167,19 @@ class MatchScene(Scene, OnlineMixin):
             v = int(110 * self.goal_flash / 0.35)
             s.add_full((v, v, int(v * 0.8)))
         self._draw_weather(s, snap)
-        self._draw_hud(s, snap)
+        cam = touch.CAM_UP
+        if not cam:
+            self._draw_hud(s, snap)
         ox = oy = 0
         if self.shake > 0:
             m = 10 * min(1, self.shake * 2.5)
             ox, oy = random.uniform(-m, m), random.uniform(-m, m)
         screen.fill((0, 0, 0))
-        screen.blit(s, (ox, oy))
+        screen.blit(s, (ox, oy - cam))
+        if cam:
+            # telefonda: saha yukari kayar, altta kontrol seridi, skor tablosu sabit
+            screen.blit(A.ctrl_strip, (0, H - cam))
+            self._draw_hud(screen, snap)
         self._draw_overlays(screen, snap)
 
     def _make_banners(self):
@@ -4081,7 +4098,7 @@ class TrophyScene(Scene):
 
 
 # ====================================================================== uygulama
-TOUCH_COLS = {"l": (40, 110, 220), "r": (40, 110, 220), "j": (40, 170, 80), "k": (220, 60, 60),
+TOUCH_COLS = {"j": (40, 170, 80), "k": (220, 60, 60),
               "d": (235, 130, 30), "o": (140, 70, 200), "s": (220, 170, 30), "p": (90, 100, 120)}
 TOUCH_LABELS = {"j": "ZIPLA", "k": "ŞUT", "d": "AŞIRT", "o": "OMUZ", "s": "SÜPER"}
 
@@ -4132,6 +4149,52 @@ def make_touch_buttons():
         out[act] = gfx.Img(surf)
         out_on[act] = gfx.Img(on)
     return out, out_on
+
+
+def make_joystick(A):
+    """Joystick tabani/topuzu ve alt kontrol seridi (kodla cizilir)."""
+    k = gfx.K
+    R = touch.JOY_R
+
+    def base_img(alpha):
+        sz = int((R * 2 + 16) * k)
+        c = sz / 2
+        sf = pygame.Surface((sz, sz), pygame.SRCALPHA)
+        pygame.draw.ellipse(sf, (10, 16, 34, int(alpha * 0.75)), (0, 0, sz, sz))
+        pygame.draw.ellipse(sf, (255, 255, 255, alpha), (0, 0, sz, sz), max(2, int(4 * k)))
+        pygame.draw.ellipse(sf, (255, 255, 255, int(alpha * 0.35)),
+                            (sz * 0.2, sz * 0.2, sz * 0.6, sz * 0.6), max(1, int(2 * k)))
+        for ang in (0, 90, 180, 270):      # yon oklari
+            a = math.radians(ang)
+            tx, ty = c + math.cos(a) * (R - 12) * k, c - math.sin(a) * (R - 12) * k
+            u = 9 * k
+            pts = [(tx + math.cos(a) * u, ty - math.sin(a) * u),
+                   (tx + math.cos(a + 2.4) * u, ty - math.sin(a + 2.4) * u),
+                   (tx + math.cos(a - 2.4) * u, ty - math.sin(a - 2.4) * u)]
+            pygame.draw.polygon(sf, (255, 255, 255, int(alpha * 0.9)), pts)
+        return gfx.Img(sf)
+
+    def knob_img(alpha):
+        rr = 34
+        sz = int((rr * 2 + 8) * k)
+        c = sz / 2
+        sf = pygame.Surface((sz, sz), pygame.SRCALPHA)
+        pygame.draw.circle(sf, (8, 12, 30, alpha), (c, c + 3 * k), rr * k)
+        pygame.draw.circle(sf, (70, 140, 235, alpha), (c, c), rr * k)
+        pygame.draw.circle(sf, (140, 195, 255, alpha), (c, c - rr * k * 0.2), rr * k * 0.62)
+        pygame.draw.circle(sf, (80, 150, 240, alpha), (c, c + rr * k * 0.06), rr * k * 0.64)
+        pygame.draw.circle(sf, (255, 255, 255, alpha), (c, c), rr * k, max(2, int(3 * k)))
+        return gfx.Img(sf)
+
+    A.joy_base, A.joy_base_on = base_img(120), base_img(220)
+    A.joy_knob, A.joy_knob_on = knob_img(150), knob_img(245)
+    cam = touch.CAM_UP
+    st = pygame.Surface((int(W * k), int(max(1, cam) * k)))
+    for yy in range(st.get_height()):
+        t = yy / max(1, st.get_height())
+        st.fill((int(26 - 14 * t), int(66 - 40 * t), int(32 - 18 * t)), (0, yy, st.get_width(), 1))
+    st.fill((235, 240, 235), (0, 0, st.get_width(), max(2, int(4 * k))))
+    A.ctrl_strip = gfx.Img(st)
 
 
 def touch_button(s, rect, label, key, color=(40, 120, 220), uni=""):
@@ -4189,6 +4252,7 @@ class App:
         ASSETS = self.assets
         if touch.ENABLED:
             self.assets.touch_btn, self.assets.touch_btn_on = make_touch_buttons()
+            make_joystick(self.assets)
         stage("dokunmatik tamam")
         self.crowds = [fx.Crowd(res, W, sd["crowd"], sd["mask"], sd["light"]) for sd in STADIUMS]
         self.stadium = 1   # varsayilan: Timsah Arena
@@ -4307,6 +4371,8 @@ class App:
             touch.zones.clear()
             touch.active = False
             self.scene.draw(self.screen)
+            if touch.ENABLED and not isinstance(self.scene, (MenuScene, MatchScene)):
+                touch_button(self.screen, (14, 670, 124, 40), "GERİ", pygame.K_ESCAPE, (90, 100, 125))
             pygame.display.flip()
         sc = self.scene
         try:
