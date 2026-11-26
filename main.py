@@ -1611,6 +1611,7 @@ class SelectScene(Scene, OnlineMixin):
         self.t = 0
         self.pending = pending or []
         self.me = 1 if mode == "client" else 0
+        self.opp_step = False     # bilgisayara karsi: once kendini, sonra rakibi sec
         if mode in ("bot", "cup"):
             self.pick[1] = random.randrange(6)
         if self.conn:
@@ -1698,9 +1699,25 @@ class SelectScene(Scene, OnlineMixin):
         if e.type == pygame.KEYDOWN:
             k = e.key
             if k == pygame.K_ESCAPE:
-                self._back()
+                if self.opp_step:
+                    self.opp_step = False
+                    self.app.sound.play("click")
+                else:
+                    self._back()
                 return
-            if self.mode == "local2":
+            if self.mode == "bot" and self.opp_step:
+                if k in (pygame.K_a, pygame.K_LEFT, pygame.K_UP, pygame.K_w):
+                    self.pick[1] = (self.pick[1] - 1) % 6
+                    self.app.sound.play("click")
+                elif k in (pygame.K_d, pygame.K_RIGHT, pygame.K_DOWN, pygame.K_s):
+                    self.pick[1] = (self.pick[1] + 1) % 6
+                    self.app.sound.play("click")
+                elif k in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                    self._toggle_ready(0)
+            elif self.mode == "bot" and k in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                self.opp_step = True
+                self.app.sound.play("kick")
+            elif self.mode == "local2":
                 if k == pygame.K_a:
                     self._move(0, -1)
                 elif k == pygame.K_d:
@@ -1767,6 +1784,20 @@ class SelectScene(Scene, OnlineMixin):
                 if r.collidepoint(e.pos):
                     who = self.me
                     if self.ready[who]:
+                        return
+                    if self.mode == "bot":
+                        if not self.opp_step:
+                            if self.pick[0] == i:
+                                self.opp_step = True          # kendini onayladi -> rakip secimi
+                                self.app.sound.play("kick")
+                            else:
+                                self.pick[0] = i
+                                self.app.sound.play("click")
+                        elif self.pick[1] == i:
+                            self._toggle_ready(0)              # rakip onaylandi -> mac
+                        else:
+                            self.pick[1] = i
+                            self.app.sound.play("click")
                         return
                     if self.pick[who] == i:
                         self._toggle_ready(who)
@@ -1871,7 +1902,13 @@ class SelectScene(Scene, OnlineMixin):
             if self.mode == "cup" and who == 1:
                 st, tcol = "5 MAÇLIK KUPA YOLU", (150, 110, 20)
             elif self.mode == "bot" and who == 1:
-                st, tcol = "ZORLUK: %s  (Z)" % LEVELS[self.level], (120, 70, 200)
+                if self.opp_step:
+                    dots = "." * (int(self.t * 2) % 4)
+                    st, tcol = "SEÇİLİYOR" + dots, (190, 60, 60)
+                else:
+                    st, tcol = "ZORLUK: %s  (Z)" % LEVELS[self.level], (120, 70, 200)
+            elif self.mode == "bot" and who == 0 and self.opp_step:
+                st, tcol = "HAZIR", (40, 170, 70)
             elif self.ready[who]:
                 st, tcol = "HAZIR", (40, 170, 70)
             else:
@@ -1943,7 +1980,18 @@ class SelectScene(Scene, OnlineMixin):
         else:
             hint = "←/→ seç · ENTER hazır" + (" · T süre · Y stadyum · H hava · B seri" if self.mode == "host" else
                                              " · V görünüm: " + ("SEN SOLDA" if self.app.mirror else "SEN SAĞDA"))
-        if touch.ENABLED:
+        if self.mode == "bot":
+            tch = touch.ENABLED
+            if self.opp_step:
+                step = "2. ADIM: RAKİBİNİ SEÇ  ·  " + ("tekrar dokun: MAÇA BAŞLA  ·  geri: kendi seçimine dön" if tch
+                                                       else "←/→ seç · ENTER maça başla · ESC kendi seçimine dön")
+                scol = (255, 140, 120)
+            else:
+                step = "1. ADIM: KENDİ KARAKTERİNİ SEÇ  ·  " + ("tekrar dokun: ONAYLA" if tch
+                                                               else "←/→ seç · ENTER onayla")
+                scol = GOLD
+            draw_text(s, step, 19, (W // 2, 693), scol, outline=3)
+        elif touch.ENABLED:
             hint = "Karaktere dokun, tekrar dokun: HAZIR  ·  Süreye / stadyuma / havaya dokunarak değiştir"
             if self.mode == "bot":
                 hint += "  ·  Rakibi değiştirmek için sağ üst panele dokun"
