@@ -100,6 +100,8 @@ def finger_event(e):
     if e.type == pygame.FINGERDOWN:
         _last_down = (e.x, e.y)
         act = _hit(x, y) if active else None
+        if ANDROID:
+            print("KAFA-DOKUN down n=(%.3f,%.3f) l=(%d,%d) aktif=%s eylem=%s kal=%s" % (e.x, e.y, x, y, active, act, _calib))
         fingers[fid] = [x, y, act]
         if act in PRESS_KEYS:
             _post_key(PRESS_KEYS[act])
@@ -115,6 +117,8 @@ def finger_event(e):
         return f[2] is not None
     if e.type == pygame.FINGERUP:
         f = fingers.pop(fid, None)
+        if ANDROID:
+            print("KAFA-DOKUN up", f)
         return bool(f and f[2])
     return False
 

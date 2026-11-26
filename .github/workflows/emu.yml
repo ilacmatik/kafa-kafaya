@@ -61,7 +61,7 @@ jobs:
           echo "===== LOGCAT 1 ====="
           grep -iE "python|sdl|kivy|kafa|fatal|androidruntime|crash|signal|libc|linker|dlopen" logcat.txt | tail -250 || true
           echo "===== LOGCAT 2 ====="
-          grep -iE "python|sdl|kafa|fatal|androidruntime|signal" logcat2.txt | tail -120 || true
+          grep -E "KAFA-|Traceback|Error" logcat2.txt | tail -120 || true
       - name: Ekran goruntulerini yukle
         if: always()
         run: gh release upload $TAG emu_ekran1.png emu_ekran2.png emu_ekran3.png emu_ekran4.png emu_ekran5.png --clobber --repo ${{ github.repository }} || true
