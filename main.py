@@ -871,6 +871,7 @@ class Assets:
                 v = opt(nm % i, hh)
                 if v is not None:
                     dct[i] = v
+        self._sel_cache = {}
         self.sel_heroes = []
         for i in range(6):
             raw = L("sel_hero%d.png" % i)
@@ -906,6 +907,16 @@ class Assets:
         pygame.draw.circle(circ, (255, 255, 255, 255), (D // 2, D // 2), D // 2)
         sq.blit(circ, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
         return gfx.Img(sq)
+
+    def sel_scaled(self, i, f):
+        f = round(f * 50) / 50          # 0.02 adimlarla onbellek
+        key = (i, f)
+        img = self._sel_cache.get(key)
+        if img is None:
+            base = self.sel_heroes[i]
+            img = tf.rotozoom(base, 0, f)
+            self._sel_cache[key] = img
+        return img
 
     @staticmethod
     def _fit(raw, size):
@@ -1997,28 +2008,43 @@ class SelectScene(Scene, OnlineMixin):
         pill(s, wxr, wcol, radius=11)
         draw_text(s, WEATHERS[self.app.weather][1] + ("  (H)" if self.mode != "client" else ""), 13,
                   (wxr.centerx, wxr.centery - 1), WHITE, outline=2)
-        # podyumlar ve karakterler
-        for i, cx in enumerate(PODIUMS):
+        # podyumlar ve karakterler: secilen one cikar (buyur, one gelir), digerleri geri cekilir
+        dtf = min(0.05, max(0.0, self.t - getattr(self, "_ft", self.t)))
+        self._ft = self.t
+        if not hasattr(self, "focus"):
+            self.focus = [0.0] * 6
+        for i in range(6):
+            tgt = 1.0 if (self.pick[0] == i or self.pick[1] == i) else 0.0
+            self.focus[i] += (tgt - self.focus[i]) * min(1.0, dtf * 10)
+        order = sorted(range(6), key=lambda i: self.focus[i])     # secilenler en ustte cizilir
+        for i in order:
+            cx = PODIUMS[i]
             sel0, sel1 = self.pick[0] == i, self.pick[1] == i
             ready = (sel0 and self.ready[0]) or (sel1 and self.ready[1])
+            f = self.focus[i]
             if sel0 or sel1:
                 col = P_COLORS[0] if sel0 else P_COLORS[1]
-                fx.blit_glow(s, cx, 596, 120 + 8 * math.sin(self.t * 5), tuple(v // 3 for v in col))
-                gd.ellipse(s, col, (cx - 82, 586, 164, 22), 4)
+                fx.blit_glow(s, cx, 600, 130 + 8 * math.sin(self.t * 5), tuple(v // 3 for v in col))
+                gd.ellipse(s, col, (cx - 92, 594, 184, 26), 5)
                 if sel0 and sel1:
-                    gd.ellipse(s, P_COLORS[1], (cx - 70, 589, 140, 16), 3)
+                    gd.ellipse(s, P_COLORS[1], (cx - 78, 598, 156, 18), 3)
             img = A.sel_heroes[i]
             bob = abs(math.sin(self.t * 8 + i)) * 10 if ready else (math.sin(self.t * 3 + i) * 2 if (sel0 or sel1) else 0)
-            if not (sel0 or sel1):
-                img.set_alpha(170)
-            s.blit(img, img.get_rect(midbottom=(cx, 602 - bob)))
+            sc_ = 0.9 + 0.22 * f
+            if abs(sc_ - 1) > 0.01:
+                img = A.sel_scaled(i, round(sc_, 2))
+            foot = 602 + 14 * f
+            if f < 0.5:
+                img.set_alpha(int(140 + 100 * f))
+            s.blit(img, img.get_rect(midbottom=(cx, foot - bob)))
             img.set_alpha(255)
-            draw_text(s, sim.DISPLAY_NAMES[i], 19, (cx, 664), GOLD if (sel0 or sel1) else WHITE, outline=3)
+            draw_text(s, sim.DISPLAY_NAMES[i], int(19 + 5 * f), (cx, 664 + 6 * f), GOLD if (sel0 or sel1) else
+                      (200, 205, 220), outline=3)
             tags = [(0, labels[0])] if sel0 else []
             if sel1:
                 tags.append((1, labels[1]))
             for n, (who, lab) in enumerate(tags):
-                ty = 350 - n * 32 + math.sin(self.t * 5) * 3
+                ty = 352 - n * 32 + math.sin(self.t * 5) * 3
                 tag = pygame.Rect(0, 0, 120, 26)
                 tag.center = (cx, ty)
                 gd.polygon(s, (12, 14, 34), [(cx - 10, tag.bottom - 2), (cx + 10, tag.bottom - 2), (cx, tag.bottom + 10)])
