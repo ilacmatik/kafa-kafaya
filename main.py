@@ -719,7 +719,7 @@ class Assets:
         ga = pygame.image.load(res("assets", "goal_art.png")).convert_alpha()
         gp = pygame.image.load(res("assets", "goal_post.png")).convert_alpha()
         sy = (sim.GROUND - sim.GOAL_TOP) / (598 - 104)
-        sx = 0.24
+        sx = 0.31
         self.goal_sx, self.goal_sy = sx, sy
         self.goal_back = gfx.from_surface(ga, (ga.get_width() * sx, ga.get_height() * sy))
         self.goal_front = gfx.from_surface(gp, (gp.get_width() * sx, gp.get_height() * sy))
@@ -3161,10 +3161,34 @@ class MatchScene(Scene, OnlineMixin):
             base, knob = A.joy_base, A.joy_knob
         s.blit(base, base.get_rect(center=(cx, cy)))
         s.blit(knob, knob.get_rect(center=(kx, ky)))
+        me = snap["p"][self.me] if self.mode != "local2" else snap["p"][0]
+        meter_v, armed, char = me[6], me[7], me[9]
+        pw = sim.CHARACTERS[char]["power"]
+        pcol = POWERS[pw][1]
+        full = meter_v >= 100 or armed > 0
         for act, (x, y, r) in touch.BUTTONS.items():
             on = act in hd
-            im = (A.touch_btn_on if on else A.touch_btn)[act]
+            if act == "s" and full:
+                fx.blit_glow(s, x, y, r * 1.9 + 6 * math.sin(self.t * 8), tuple(v // 2 for v in pcol))
+            im = (A.touch_btn_on if (on or (act == "s" and full)) else A.touch_btn)[act]
             s.blit(im, im.get_rect(center=(x, y + (3 if on else 0))))
+            if act == "s":
+                # super dolumu: dugme cevresinde halka + karakterin guc ikonu
+                k = max(0.0, min(1.0, meter_v / 100))
+                gd.circle(s, (10, 14, 30), (x, y), r + 6, 5)
+                if k > 0.01:
+                    n_ = max(2, int(40 * k))
+                    pts = [(x + (r + 6) * math.sin(2 * math.pi * k * q / n_),
+                            y - (r + 6) * math.cos(2 * math.pi * k * q / n_)) for q in range(n_ + 1)]
+                    gd.lines(s, pcol, False, pts, 5)
+                ic = A.power_icon_small[pw]
+                s.blit(ic, ic.get_rect(center=(x + r * 0.62, y + r * 0.62)))
+            if act in ("d", "s"):          # asirtma ve super ayrica yazili (digerleri ikondan belli)
+                lab = TOUCH_LABELS.get(act, "")
+                if act == "s":
+                    lab = POWERS[pw][0] if full else "SÜPER %d%%" % int(meter_v)
+                draw_text(s, lab, 13 if act != "k" else 15, (x, y + r + 11),
+                          (pcol if act == "s" and full else WHITE), outline=3)
 
     def _draw_main(self, screen):
         A = self.app.assets
@@ -4203,7 +4227,7 @@ class TrophyScene(Scene):
 # ====================================================================== uygulama
 TOUCH_COLS = {"j": (40, 170, 80), "k": (220, 60, 60),
               "d": (235, 130, 30), "o": (140, 70, 200), "s": (220, 170, 30), "p": (90, 100, 120)}
-TOUCH_LABELS = {"j": "ZIPLA", "k": "ŞUT", "d": "AŞIRT", "o": "OMUZ", "s": "SÜPER"}
+TOUCH_LABELS = {"j": "ZIPLA", "k": "ŞUT", "d": "AŞIRTMA", "o": "OMUZ", "s": "SÜPER"}
 
 
 def make_touch_buttons():

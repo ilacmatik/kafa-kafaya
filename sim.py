@@ -9,7 +9,7 @@ import random
 W, H = 1280, 720
 GROUND = 652
 GOAL_D = 102          # kale cizgisi (on direk ic yuzu) x konumu
-GOAL_H = 188          # kale agzi yuksekligi
+GOAL_H = 310          # kale agzi yuksekligi (en iyi ziplayanin kafasi ustunde bir top payi kalir)
 ROOF_T = 26           # ust direk kalinligi (gorselle ayni)
 GOAL_TOP = GROUND - GOAL_H
 
@@ -17,6 +17,7 @@ BALL_R = 20
 BALL_G = 1250.0
 PLAYER_G = 1750.0
 BALL_MAX = 1700.0
+BALL_TS = 0.85         # topun zaman olcegi: 1'den kucuk = daha yavas top
 
 SUPER_SPEED = 1150.0
 SUPER_TIME = 1.0
@@ -45,7 +46,9 @@ STAT_BARS = [  # hiz, ziplama, sut (0-5) - secim ekrani icin
     (4, 3, 4), (3, 3, 4), (2, 5, 2), (3, 5, 3), (5, 2, 2), (1, 1, 5),
 ]
 
-BASE_H = 160.0
+BASE_H = 160.0 * 0.88
+SIZE = 0.88            # oyuncu boyutu carpani (carpisma daireleri de buna gore)
+JUMP_K = 0.90          # ziplama gucu carpani
 
 
 def clamp(v, a, b):
@@ -60,8 +63,8 @@ class Player:
         self.stats = c
         self.h = BASE_H * c["scale"]
         self.h0 = self.h
-        self.head_r = 27.0 * c["head"] * c["scale"]
-        self.body_r = 29.0 * c["scale"]
+        self.head_r = 27.0 * c["head"] * c["scale"] * SIZE
+        self.body_r = 29.0 * c["scale"] * SIZE
         self.dir = 1 if idx == 0 else -1     # hucum yonu
         self.reset()
         self.meter = 0.0
@@ -104,18 +107,18 @@ class Player:
 
     # carpisma daireleri
     def head(self):
-        return self.x + self.face * 3, self.y - self.h + self.head_r + 4, self.head_r
+        return self.x + self.face * 3, self.y - self.h + self.head_r + 4 * SIZE, self.head_r
 
     def body(self):
         """Govde (bel-gogus): yerdeki top bunun altindan gecebilir."""
-        return self.x, self.y - self.h * 0.47, 22.0 * self.stats["scale"]
+        return self.x, self.y - self.h * 0.47, 22.0 * self.stats["scale"] * SIZE
 
     def legs(self):
         """Bacaklar: sadece yerdeyken topu durdurur (ziplayinca top altindan gecer)."""
-        return self.x, self.y - 20, 17.0 * self.stats["scale"]
+        return self.x, self.y - 20 * SIZE, 17.0 * self.stats["scale"] * SIZE
 
     def foot(self):
-        return self.x + self.face * 38 * self.stats["scale"], self.y - 32, 44.0
+        return self.x + self.face * 38 * self.stats["scale"] * SIZE, self.y - 32 * SIZE, 44.0 * SIZE
 
     @property
     def disabled(self):
@@ -240,7 +243,7 @@ class World:
         jmul = 1.28 if p.jump_t > 0 else 1.0
         p.lob = bool(lob)    # asagi tusu basili mi (asirtma karari temas aninda verilir)
         if jump and p.on_ground:
-            p.vy = -p.stats["jump"] * jmul
+            p.vy = -p.stats["jump"] * JUMP_K * jmul
             p.on_ground = False
             p.air_jumps = 1
             p.jump_cut = False
@@ -252,7 +255,7 @@ class World:
         elif jump_edge and not p.on_ground and p.air_jumps > 0:
             # cift ziplama
             p.air_jumps = 0
-            p.vy = -p.stats["jump"] * 0.82 * jmul
+            p.vy = -p.stats["jump"] * JUMP_K * 0.82 * jmul
             self.events.append("jump2:%d" % i)
         # sut: basili tut = sarj, birak = vur (dokunus = normal sut)
         if kick_held is None:
@@ -404,7 +407,7 @@ class World:
         q = 1.0 - 0.4 * clamp(rel, 0.0, 1.0)       # tam temas = guclu sut
         h = p.y - b.y                               # topun ayak seviyesinden yuksekligi
         # temas noktasi: ayagin ortasi ~ yerden 32 px. Topun altina vurursan yukselir, ustune vurursan iner.
-        off = clamp(32 - h + BALL_R * 0.4, -55, 40)     # + : topun alti, - : topun ustu
+        off = clamp(32 * SIZE - h + BALL_R * 0.4, -55, 40)     # + : topun alti, - : topun ustu
         ang = clamp(30 + off * 0.62, -6, 56)
         kind = "volley" if h >= 85 else "shot"
         q *= 1.0 - 0.12 * clamp(abs(off) / 40, 0, 1)    # tam ortadan vurus en guclu
@@ -686,6 +689,7 @@ class World:
             self.net_cd -= dt
         if b.squeeze_cd > 0:
             b.squeeze_cd -= dt
+        bdt = dt * BALL_TS          # top biraz daha yavas akar (yorunge ayni, hiz dusuk)
         mag = None
         for q in self.players:
             if q.magnet_t > 0 and not q.disabled:
@@ -701,20 +705,20 @@ class World:
             if b.mode_t <= 0:
                 b.mode = 0
         else:
-            b.vy += BALL_G * dt + b.spin * 430 * dt
-            b.vx *= (1 - 0.12 * dt)
+            b.vy += BALL_G * bdt + b.spin * 430 * bdt
+            b.vx *= (1 - 0.12 * bdt)
             if self.wind and b.y < GROUND - BALL_R - 4:
-                b.vx += self.wind * dt
+                b.vx += self.wind * bdt
             if b.curve > 0:
                 if b.y < GROUND - BALL_R - 4:
-                    b.vx += b.cdir * 520 * b.curve * dt     # kaleye dogru kivrilma
-                    b.vy += 300 * b.curve * dt              # gec dusus
+                    b.vx += b.cdir * 520 * b.curve * bdt     # kaleye dogru kivrilma
+                    b.vy += 300 * b.curve * bdt              # gec dusus
                 b.curve = max(0.0, b.curve - dt * 1.3)
-            b.spin *= (1 - 0.6 * dt)
+            b.spin *= (1 - 0.6 * bdt)
         b.px = b.x
-        b.x += b.vx * dt
-        b.y += b.vy * dt
-        b.ang += (b.vx / BALL_R + b.spin * 12 * (1 if b.vx >= 0 else -1)) * dt
+        b.x += b.vx * bdt
+        b.y += b.vy * bdt
+        b.ang += (b.vx / BALL_R + b.spin * 12 * (1 if b.vx >= 0 else -1)) * bdt
 
         # zemin
         if b.y + BALL_R > GROUND:

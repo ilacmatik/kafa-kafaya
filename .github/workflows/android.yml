@@ -48,6 +48,22 @@ jobs:
           echo $TAG > assets/version.txt
           N=${TAG#surum-}
           sed -i "s/^version = .*/version = 1.$N/" buildozer.spec
+          # her derlemede artan surum kodu: telefon yeni APK'yi guncelleme olarak kabul eder
+          sed -i "s/^version = .*/&\nandroid.numeric_version = $((1000 + ${{ github.run_number }}))/" buildozer.spec
+          grep -n "version" buildozer.spec
+      - name: Imza anahtari (her surumde ayni -> eskinin ustune guncellenir)
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kafakafaya-imza-v1
+      - name: Anahtar yoksa olustur
+        run: |
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 2048 -validity 20000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          keytool -list -keystore ~/.android/debug.keystore -storepass android | grep -i "fingerprint" || true
       - name: APK olustur
         run: yes | buildozer android debug
       - name: APK adi
