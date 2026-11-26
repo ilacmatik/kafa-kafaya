@@ -7,7 +7,12 @@ import time
 
 TCP_PORT = 50505
 UDP_PORT = 50506
+QUERY_PORT = 50507      # "orada mac var mi?" sorgusu (hotspot gibi yayinin gitmedigi aglar icin)
 MAGIC = "KAFAKAFAYA1"
+
+# platforma ozel ek bilgiler (Android'de touch.py doldurur)
+EXTRA_IPS = lambda: []          # noqa: E731  - bu cihazin tum IPv4 adresleri
+GATEWAYS = lambda: []           # noqa: E731  - bagli olunan agin ag gecidi (hotspot sahibi)
 
 
 def local_ips():
@@ -26,6 +31,10 @@ def local_ips():
             s.close()
         except OSError:
             pass
+    try:
+        ips.update(EXTRA_IPS())
+    except Exception:
+        pass
     ips = [ip for ip in ips if not ip.startswith("127.") and not ip.startswith("169.254.")]
     # once yaygin ev/ofis aglari
     ips.sort(key=lambda ip: (not ip.startswith("192.168."), ip))
@@ -115,6 +124,31 @@ class Host:
         self.srv.settimeout(0.5)
         threading.Thread(target=self._accept, daemon=True).start()
         threading.Thread(target=self._announce, daemon=True).start()
+        threading.Thread(target=self._respond, daemon=True).start()
+
+    def _respond(self):
+        """Sorgu gelince dogrudan sorana cevap ver (yayin ulasmayan aglarda da bulunuruz)."""
+        try:
+            q = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            q.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            q.bind(("", QUERY_PORT))
+            q.settimeout(0.5)
+        except OSError:
+            return
+        msg = ("%s|%s|%d" % (MAGIC, self.name, TCP_PORT)).encode("utf-8")
+        while self.running and self.conn is None:
+            try:
+                data, addr = q.recvfrom(256)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if data.startswith(MAGIC.encode()):
+                try:
+                    q.sendto(msg, (addr[0], UDP_PORT))
+                except OSError:
+                    pass
+        q.close()
 
     def _accept(self):
         while self.running and self.conn is None:
@@ -179,6 +213,33 @@ class Finder:
             self.running = False
             return
         threading.Thread(target=self._listen, daemon=True).start()
+        threading.Thread(target=self._query, daemon=True).start()
+
+    def _query(self):
+        try:
+            u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            u.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        except OSError:
+            return
+        q = (MAGIC + "?").encode()
+        while self.running:
+            targets = set(["255.255.255.255"])
+            try:
+                targets.update(GATEWAYS())
+            except Exception:
+                pass
+            for ip in local_ips():
+                p = ip.split(".")
+                if len(p) == 4:
+                    targets.add(".".join(p[:3] + ["255"]))
+                    targets.add(".".join(p[:3] + ["1"]))     # cogu hotspot/modem .1 olur
+            for t in targets:
+                try:
+                    u.sendto(q, (t, QUERY_PORT))
+                except OSError:
+                    pass
+            time.sleep(1.0)
+        u.close()
 
     def _listen(self):
         while self.running:

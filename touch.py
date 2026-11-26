@@ -191,3 +191,40 @@ def android_multicast_lock():
         return lock
     except Exception:
         return None
+
+
+def android_ips():
+    """Android: tum ag arayuzlerinin IPv4 adresleri (hotspot arayuzu dahil)."""
+    out = []
+    try:
+        from jnius import autoclass
+        NI = autoclass("java.net.NetworkInterface")
+        it = NI.getNetworkInterfaces()
+        while it.hasMoreElements():
+            ni = it.nextElement()
+            if not ni.isUp() or ni.isLoopback():
+                continue
+            addrs = ni.getInetAddresses()
+            while addrs.hasMoreElements():
+                a = addrs.nextElement().getHostAddress()
+                if a and ":" not in a:
+                    out.append(a)
+    except Exception:
+        pass
+    return out
+
+
+def android_gateways():
+    """Android: bagli olunan Wi-Fi'nin ag gecidi (hotspot acan telefonun adresi)."""
+    try:
+        from jnius import autoclass
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        ctx = autoclass("android.content.Context")
+        wifi = activity.getApplicationContext().getSystemService(ctx.WIFI_SERVICE)
+        g = wifi.getDhcpInfo().gateway & 0xFFFFFFFF
+        if g:
+            return ["%d.%d.%d.%d" % (g & 255, (g >> 8) & 255, (g >> 16) & 255, (g >> 24) & 255)]
+    except Exception:
+        pass
+    return []
+

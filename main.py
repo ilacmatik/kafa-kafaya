@@ -4272,6 +4272,9 @@ class App:
         self._lost_events = tuple(getattr(pygame, n) for n in ("WINDOWFOCUSLOST", "APP_WILLENTERBACKGROUND",
                                                                "WINDOWMINIMIZED") if hasattr(pygame, n))
         self._mlock = touch.android_multicast_lock()
+        if touch.ANDROID:
+            net.EXTRA_IPS = touch.android_ips
+            net.GATEWAYS = touch.android_gateways
         stage("ag kilidi %s" % bool(self._mlock))
         self.scene = MenuScene(self)
         stage("MENU ACILDI")
