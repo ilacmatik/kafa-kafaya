@@ -2145,6 +2145,8 @@ class MatchScene(Scene, OnlineMixin):
         self._lat = []          # varis - sunucu zamani farklari (gecikme + saat farki)
         self._base = 0.0
         self._delay = 0.07      # ara degerleme tamponu (sn), titremeye gore uyarlanir
+        self.rtt = 0.05
+        self._fps = 60.0
         self.snap = None
         self.pending = pending or []
         self.parts = []
@@ -2357,6 +2359,8 @@ class MatchScene(Scene, OnlineMixin):
                 msg = dict(snap)
                 msg["t"] = "st"
                 msg["ht"] = round(now_, 4)
+                if self.remote.get("ct"):
+                    msg["ec"] = self.remote["ct"]        # istemcinin saatini geri yolla (ping olcumu)
                 msg["ag"] = [1 if a else 0 for a in self.again]
                 self.conn.send(msg)
         self.snap = snap
@@ -2366,7 +2370,7 @@ class MatchScene(Scene, OnlineMixin):
         h = self._held(KEYS_SOLO)
         if self.mirror:
             h["l"], h["r"] = h["r"], h["l"]
-        self.conn.send({"t": "in", "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
+        self.conn.send({"t": "in", "ct": round(time.time(), 4), "l": int(h["l"]), "r": int(h["r"]), "j": int(h["j"]),
                         "k": self.counts[1][0], "s": self.counts[1][1], "kh": int(h["k"]),
                         "o": self.counts[1][2], "dn": int(h["d"])})
         now = time.time()
@@ -2377,6 +2381,10 @@ class MatchScene(Scene, OnlineMixin):
             if t == "st":
                 if self.mirror:
                     m = mirror_snap(m)
+                if m.get("ec"):
+                    r_ = now - m["ec"]
+                    if 0 <= r_ < 2:
+                        self.rtt += (r_ - self.rtt) * 0.1
                 ht = m.get("ht")
                 if ht is None:
                     self._base = 0.0
@@ -2467,20 +2475,28 @@ class MatchScene(Scene, OnlineMixin):
         k = min(1.0, dt * 60)
         pr[2] += (move * spd - pr[2]) * acc * k
         if h["j"] and pr[4]:
-            pr[3] = -st["jump"] * (1.28 if srv[11] > 0 else 1.0)
+            pr[3] = -st["jump"] * sim.JUMP_K * (1.28 if srv[11] > 0 else 1.0)
             pr[4] = False
         pr[3] += sim.PLAYER_G * dt
         pr[0] = max(28, min(W - 28, pr[0] + pr[2] * dt))
         pr[1] += pr[3] * dt
         if pr[1] >= sim.GROUND:
             pr[1], pr[3], pr[4] = sim.GROUND, 0.0, True
-        # sunucuyla yumusak uzlasma
+        # sunucuyla uzlasma: sunucu konumu ag gecikmesi kadar geriden gelir; hareket halindeyken
+        # ona dogru cekmek karakteri her karede geri iter (takilma). Kosarken cok hafif, dururken
+        # daha guclu duzelt; buyuk farkta isinla.
         ex, ey = srv[0] - pr[0], srv[1] - pr[1]
-        if abs(ex) > 90 or abs(ey) > 90:
+        lag = abs(pr[2]) * min(0.25, self._delay + self.rtt / 2)       # beklenen dogal fark
+        if abs(ex) > 140 + lag or abs(ey) > 140:
             pr[0], pr[1], pr[3], pr[4] = srv[0], srv[1], 0.0, bool(srv[8])
         else:
-            pr[0] += ex * 0.12
-            pr[1] += ey * 0.12
+            moving = move != 0 or abs(pr[2]) > 40
+            kx = 0.012 if moving else 0.08
+            if abs(ex) > lag + 30:
+                kx = max(kx, 0.05)
+            pr[0] += ex * kx * k
+            if pr[4] and srv[8]:
+                pr[1] += ey * 0.2 * k
             if srv[8] and pr[1] > sim.GROUND - 3:
                 pr[4] = True
         snap = dict(self.snap)
@@ -3149,6 +3165,16 @@ class MatchScene(Scene, OnlineMixin):
 
     def draw(self, screen):
         self._draw_main(screen)
+        if self.conn is not None:
+            dtf = max(1e-3, self.t - getattr(self, "_fps_t", self.t - 1 / 60))
+            self._fps_t = self.t
+            self._fps += (min(120, 1 / dtf) - self._fps) * 0.05
+            if self.mode == "client":
+                info = "ping %d ms · tampon %d ms · %d fps" % (self.rtt * 1000, self._delay * 1000, self._fps)
+            else:
+                info = "%d fps" % self._fps
+            draw_text(screen, info, 12, (8, H - 8 - (touch.CAM_UP if touch.ENABLED else 0)), (220, 230, 245),
+                      anchor="bottomleft", outline=2, title=False)
         if self.t < self.intro:
             self._draw_intro(screen)
             touch.release_all()

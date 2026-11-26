@@ -52,7 +52,11 @@ class Conn:
         self.alive = True
         self.lock = threading.Lock()
         self.last_recv = time.time()
+        self.outq = queue.Queue()
+        self._latest = {}          # sik mesajlar ("st", "in"): sadece en yenisi gonderilir
+        self._latest_lock = threading.Lock()
         threading.Thread(target=self._reader, daemon=True).start()
+        threading.Thread(target=self._writer, daemon=True).start()
 
     def _reader(self):
         buf = b""
@@ -75,14 +79,38 @@ class Conn:
         self.alive = False
 
     def send(self, msg):
+        """Bloklamaz: oyun dongusu ag yuzunden takilmasin diye ayri is parcacigi yollar."""
         if not self.alive:
             return
-        data = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
+        t = msg.get("t")
+        if t in ("st", "in"):
+            with self._latest_lock:
+                fresh = t not in self._latest
+                self._latest[t] = msg
+            if fresh:
+                self.outq.put(t)
+        else:
+            self.outq.put(msg)
+
+    def _writer(self):
         try:
-            with self.lock:
+            while self.alive:
+                try:
+                    item = self.outq.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                if isinstance(item, str):
+                    with self._latest_lock:
+                        msg = self._latest.pop(item, None)
+                    if msg is None:
+                        continue
+                else:
+                    msg = item
+                data = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
                 self.sock.sendall(data)
         except OSError:
-            self.alive = False
+            pass
+        self.alive = False
 
     def poll(self):
         out = []
@@ -93,6 +121,10 @@ class Conn:
                 return out
 
     def close(self):
+        # bekleyen mesajlar (or. "bye") gitsin diye kisa bekle
+        t0 = time.time()
+        while self.alive and not self.outq.empty() and time.time() - t0 < 0.3:
+            time.sleep(0.01)
         self.alive = False
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
