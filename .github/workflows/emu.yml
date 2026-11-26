@@ -1,0 +1,53 @@
+name: Android emulator testi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: APK indir
+        run: |
+          TAG=$(gh release view --repo ${{ github.repository }} --json tagName -q .tagName)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          gh release download $TAG --repo ${{ github.repository }} -p KafaKafaya.apk
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Emulatorde calistir
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            adb install -r KafaKafaya.apk
+            adb logcat -c
+            adb shell am start -n org.ilacmatik.kafakafaya/org.kivy.android.PythonActivity
+            sleep 60
+            adb exec-out screencap -p > emu_ekran1.png || true
+            adb logcat -d > logcat.txt || true
+            adb shell am start -n org.ilacmatik.kafakafaya/org.kivy.android.PythonActivity
+            sleep 30
+            adb exec-out screencap -p > emu_ekran2.png || true
+            adb logcat -d > logcat2.txt || true
+      - name: Log ozeti
+        if: always()
+        run: |
+          echo "===== LOGCAT 1 ====="
+          grep -iE "python|sdl|kivy|kafa|fatal|androidruntime|crash|signal|libc|linker|dlopen" logcat.txt | tail -250 || true
+          echo "===== LOGCAT 2 ====="
+          grep -iE "python|sdl|kafa|fatal|androidruntime|signal" logcat2.txt | tail -120 || true
+      - name: Ekran goruntulerini yukle
+        if: always()
+        run: gh release upload $TAG emu_ekran1.png emu_ekran2.png --clobber --repo ${{ github.repository }} || true
