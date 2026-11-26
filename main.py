@@ -719,7 +719,7 @@ class Assets:
         ga = pygame.image.load(res("assets", "goal_art.png")).convert_alpha()
         gp = pygame.image.load(res("assets", "goal_post.png")).convert_alpha()
         sy = (sim.GROUND - sim.GOAL_TOP) / (598 - 104)
-        sx = 0.31
+        sx = 0.29
         self.goal_sx, self.goal_sy = sx, sy
         self.goal_back = gfx.from_surface(ga, (ga.get_width() * sx, ga.get_height() * sy))
         self.goal_front = gfx.from_surface(gp, (gp.get_width() * sx, gp.get_height() * sy))

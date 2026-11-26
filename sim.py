@@ -9,7 +9,7 @@ import random
 W, H = 1280, 720
 GROUND = 652
 GOAL_D = 102          # kale cizgisi (on direk ic yuzu) x konumu
-GOAL_H = 310          # kale agzi yuksekligi (en iyi ziplayanin kafasi ustunde bir top payi kalir)
+GOAL_H = 285          # kale agzi yuksekligi (en iyi ziplayanin kafasi ustunde bir top payi kalir)
 ROOF_T = 26           # ust direk kalinligi (gorselle ayni)
 GOAL_TOP = GROUND - GOAL_H
 
@@ -46,9 +46,9 @@ STAT_BARS = [  # hiz, ziplama, sut (0-5) - secim ekrani icin
     (4, 3, 4), (3, 3, 4), (2, 5, 2), (3, 5, 3), (5, 2, 2), (1, 1, 5),
 ]
 
-BASE_H = 160.0 * 0.88
-SIZE = 0.88            # oyuncu boyutu carpani (carpisma daireleri de buna gore)
-JUMP_K = 0.90          # ziplama gucu carpani
+BASE_H = 160.0 * 0.85
+SIZE = 0.85            # oyuncu boyutu carpani (carpisma daireleri de buna gore)
+JUMP_K = 0.85          # ziplama gucu carpani
 
 
 def clamp(v, a, b):
