@@ -282,6 +282,22 @@ func _kick_swoosh(p: SimPlayer, h: float) -> void:
 			prev = pt
 
 
+## Video animasyonu durumu
+func _anim_state(p: SimPlayer, w: SimWorld, i: int) -> String:
+	var celebrate: bool = (w.phase == "goal" and w.scorer == i) or (w.phase == "over" and w.winner == i)
+	if p.stun > 0.0:
+		return "hurt"
+	if p.kick_t > 0.0 or p.bike_t > 0.0 or p.slide_t > 0.0:
+		return "kick"
+	if celebrate:
+		return "celeb"
+	if not p.on_ground:
+		return "jump"
+	if absf(p.vx) > 40.0 and p.frozen <= 0.0:
+		return "run"
+	return "idle"
+
+
 func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 	var pr := _player_pose(p, w, i)
 	var pose: String = pr[1]
@@ -337,7 +353,16 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 		var rrot := deg_to_rad(tilt * (1.0 if not flip else -1.0)) * 0.5 if (p.stun > 0.0 or pose == "slide") else 0.0
 		# cizim boyu: gorsel kafa merkezi = fizik kafa merkezi
 		var hc: float = p.h0 - p.head_r - 4.0 * K.SIZE
-		Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), Rig.fit_h(Rig.rig_of(p.char), hc), flip, modr, Vector2(sx, sy), rrot)
+		var rname := Rig.rig_of(p.char)
+		var an := _anim_state(p, w, i)
+		if an != ps.get("an", ""):
+			ps["an"] = an
+			ps["an_t"] = 0.0
+		ps["an_t"] = float(ps.get("an_t", 0.0)) + last_dt
+		if Anim.has(rname, an):
+			Anim.draw(self, rname, an, ps["an_t"] + i * 0.37, Vector2(p.x, p.y), hc, flip, modr, Vector2(sx, sy), rrot)
+		else:
+			Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), Rig.fit_h(Rig.rig_of(p.char), hc), flip, modr, Vector2(sx, sy), rrot)
 	else:
 		var size: Vector2 = Vector2(tex.get_width(), tex.get_height()) * f * Vector2(sx, sy)
 		var ax := R.anchor(p.char, akey, 0.40 if pose == "kick" else 0.5)
