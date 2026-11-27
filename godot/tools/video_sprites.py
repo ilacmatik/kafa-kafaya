@@ -15,14 +15,35 @@ t0 = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
 t1 = float(sys.argv[5]) if len(sys.argv) > 5 else 1e9
 os.makedirs(out, exist_ok=True)
 
-# akicilik: AI videolari 24 kare/sn; hareket telafili ara kare uretimiyle 48'e cikar
-# (oyunda ayrica iki kare arasi yumusak gecis var -> 60/120 Hz ekranda takilma olmaz)
-fps = float(os.environ.get("ANIM_FPS", "48"))
+# 1) ham kareler (videonun kendi hizi, genelde 24)
+fps = 24.0
 tmp = tempfile.mkdtemp()
-vf = f"minterpolate=fps={fps:g}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
-subprocess.run(["ffmpeg", "-loglevel", "error", "-i", src, "-vf", vf, "-vsync", "0", f"{tmp}/%04d.png"], check=True)
+subprocess.run(["ffmpeg", "-loglevel", "error", "-i", src, "-vsync", "0", f"{tmp}/%04d.png"], check=True)
 files = sorted(glob.glob(f"{tmp}/*.png"))
 files = [f for k, f in enumerate(files) if t0 <= k / fps < t1]
+# 2) AI videolari genelde "ikiserli": her poz 2 kare tekrar eder (gercekte 12 kare/sn) -> tekrarlari at
+raw = [np.array(Image.open(f).convert("RGB"))[::4, ::4].astype(np.int16) for f in files]
+keep = [0]
+for k in range(1, len(files)):
+    if np.abs(raw[k] - raw[keep[-1]]).mean() > 1.2:
+        keep.append(k)
+ratio = len(keep) / len(files)
+print("tekrarsiz kare: %d / %d" % (len(keep), len(files)))
+if ratio < 0.8:
+    files = [files[k] for k in keep]
+    fps = float(round(fps * ratio))
+# 3) ara kare: hareket telafili, hedef INTERP_FPS (hizli hareketlerde dusuk tutulur: bulasma olmasin)
+tgt = float(os.environ.get("INTERP_FPS", "24"))
+if tgt > fps:
+    d2 = tempfile.mkdtemp()
+    for n, f in enumerate(files):
+        os.symlink(f, f"{d2}/{n:04d}.png")
+    d3 = tempfile.mkdtemp()
+    vf = f"minterpolate=fps={tgt:g}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-framerate", f"{fps:g}", "-i", f"{d2}/%04d.png", "-vf", vf, f"{d3}/%04d.png"], check=True)
+    files = sorted(glob.glob(f"{d3}/*.png"))
+    fps = tgt
+print("kare hizi", fps)
 
 
 def key(path):
@@ -44,6 +65,7 @@ def key(path):
 
 
 frames = [key(f) for f in files]
+
 alphas = [f[..., 3] > 128 for f in frames]
 
 # dongu secimi
@@ -51,9 +73,10 @@ sel = list(range(len(frames)))
 if mode == "loop" and len(frames) > 30:
     sm = [np.array(Image.fromarray(f).resize((f.shape[1] // 8, f.shape[0] // 8))).astype(np.float32) for f in frames]
     best = (1e18, 0, len(frames))
-    minlen = int(fps * 1.2)
+    minlen = int(fps * float(os.environ.get("MINLEN", "1.2")))
+    maxlen = int(fps * float(os.environ.get("MAXLEN", "3.0")))   # atlas 4096'yi asmasin
     for i in range(len(frames)):
-        for j in range(i + minlen, len(frames)):
+        for j in range(i + minlen, min(len(frames), i + maxlen + 1)):
             d = np.abs(sm[i] - sm[j]).mean()
             if d < best[0]:
                 best = (d, i, j)

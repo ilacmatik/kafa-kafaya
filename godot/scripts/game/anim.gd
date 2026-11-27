@@ -30,6 +30,24 @@ static func length(rig: String, name: String) -> float:
 	return 0.0 if m == null else float(m["frames"].size()) / float(m["fps"])
 
 
+## Dunya biriminde olcek (kare pikseli -> dunya)
+static func world_k(rig: String, name: String, hc: float) -> float:
+	var m = _m(rig, name)
+	var idle = _m(rig, "idle")
+	if m == null or idle == null:
+		return 1.0
+	var ih: float = float(idle["foot"][1]) - float(idle["top"])
+	return hc / (ih * (1.0 - HEAD_FRAC)) * float(m["scale"]) / float(idle["scale"])
+
+
+## Kosu: 1x hizda ayagin zemindeki hizi (dunya birimi/sn). Oynatma hizi = oyuncu hizi / bu -> ayak kaymaz.
+static func ground_speed(rig: String, name: String, hc: float) -> float:
+	var m = _m(rig, name)
+	if m == null or not m.has("ground_v"):
+		return 0.0
+	return float(m["ground_v"]) * world_k(rig, name, hc)
+
+
 ## t: hareketin baslangicindan gecen sure. hc: zeminden fizik kafa merkezi yuksekligi (dunya birimi).
 static func draw(ci: CanvasItem, rig: String, name: String, t: float, feet: Vector2, hc: float, flip: bool,
 		mod: Color = Color.WHITE, sq: Vector2 = Vector2.ONE, rot: float = 0.0) -> void:
@@ -38,10 +56,7 @@ static func draw(ci: CanvasItem, rig: String, name: String, t: float, feet: Vect
 	if m == null or idle == null:
 		return
 	# olcek: idle'da ayak - kafa merkezi (piksel) = hc (dunya)
-	var hf := HEAD_FRAC
-	var ih: float = float(idle["foot"][1]) - float(idle["top"])
-	var px_hc := ih * (1.0 - hf)
-	var k := hc / px_hc * float(m["scale"]) / float(idle["scale"])
+	var k := world_k(rig, name, hc)
 	var frames: Array = m["frames"]
 	var n := frames.size()
 	var ft: float = t * float(m["fps"])

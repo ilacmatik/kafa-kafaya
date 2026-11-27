@@ -358,7 +358,12 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 		if an != ps.get("an", ""):
 			ps["an"] = an
 			ps["an_t"] = 0.0
-		ps["an_t"] = float(ps.get("an_t", 0.0)) + last_dt
+		var rate := 1.0
+		if an == "run":
+			var gs := Anim.ground_speed(rname, an, hc)
+			if gs > 0.0:
+				rate = clampf(absf(p.vx) / gs, 0.5, 2.2)
+		ps["an_t"] = float(ps.get("an_t", 0.0)) + last_dt * rate
 		if Anim.has(rname, an):
 			Anim.draw(self, rname, an, ps["an_t"] + i * 0.37, Vector2(p.x, p.y), hc, flip, modr, Vector2(sx, sy), rrot)
 		else:
