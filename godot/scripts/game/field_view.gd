@@ -6,9 +6,12 @@ var add_layer: Node2D   # toplamali (isik) katman
 var glows: Array = []   # [pos, r, col]
 
 const STADIUMS := [
-	{"bg": "stadium_night.jpg", "boards": false},
-	{"bg": "stadium_timsah.jpg", "boards": true, "wx": {"rain": "stadium_timsah_rain_clean.jpg",
-		"snow": "stadium_timsah_snow_clean.jpg"}},
+	{"bg": "stadium_night_clean.jpg", "boards": false, "crowd": "crowd_night.json",
+		"mask": "crowd_mask_night.png", "light": 0.82,
+		"lamps": [Vector2(90, 80), Vector2(435, 194), Vector2(851, 194), Vector2(1180, 80)]},
+	{"bg": "stadium_timsah_clean.jpg", "boards": true, "wx": {"rain": "stadium_timsah_rain_clean.jpg",
+		"snow": "stadium_timsah_snow_clean.jpg"}, "crowd": "crowd_timsah.json",
+		"mask": "crowd_mask_timsah.png", "light": 0.95, "lamps": []},
 ]
 const ADS := [["ULUDAĞ GAZOZ", Color8(255, 214, 60)], ["MATLI", Color8(255, 120, 90)],
 	["TURKCELL", Color8(255, 205, 40)], ["ÖZDİLEK", Color8(255, 255, 255)],
@@ -19,6 +22,8 @@ var goal_back: Texture2D
 var goal_front: Texture2D
 var gsx := 0.29
 var gsy := 1.0
+var bg_node := Node2D.new()
+var crowd: Crowd
 
 
 func _ready() -> void:
@@ -32,6 +37,32 @@ func _ready() -> void:
 	add_layer.z_index = 5
 	add_child(add_layer)
 	add_layer.draw.connect(_draw_add)
+	# arka plan ve taraftarlar sahnenin geri kalanindan once cizilir
+	bg_node.show_behind_parent = true
+	add_child(bg_node)
+	bg_node.draw.connect(_draw_bg)
+	crowd = Crowd.new()
+	crowd.show_behind_parent = true
+	add_child(crowd)
+
+
+## match.gd stadyum belli olunca cagirir
+func setup_stadium(idx: int, c0: int, c1: int) -> void:
+	var st: Dictionary = STADIUMS[idx]
+	crowd.setup(st["crowd"], st["mask"], st["light"])
+	crowd.set_teams(c0, c1)
+	crowd.fill = 0.0
+
+
+func _draw_bg() -> void:
+	if m == null or m.world == null:
+		return
+	var st: Dictionary = STADIUMS[m.stadium]
+	var bgname: String = st["bg"]
+	if st.has("wx") and st["wx"].has(m.world.weather):
+		bgname = st["wx"][m.world.weather]
+	# arka plan sahayi asagi/yukari tasarsa bos kalmasin diye biraz genis ciz
+	bg_node.draw_texture_rect(R.tex(bgname), Rect2(-2, -2, K.W + 4, K.H + 4), false)
 
 
 func glow(p: Vector2, r: float, c: Color) -> void:
@@ -43,8 +74,13 @@ func _draw_add() -> void:
 		R.glow(add_layer, g[0], g[1], g[2])
 
 
-func _process(_d: float) -> void:
+func _process(dt: float) -> void:
 	glows.clear()
+	if crowd.fans.size() > 0 and not (m != null and m.paused):
+		crowd.update(dt)
+		if crowd.fill < 1.0:
+			crowd.fill = minf(1.0, crowd.fill + dt / 2.3)
+	bg_node.queue_redraw()
 	queue_redraw()
 
 
@@ -54,14 +90,12 @@ func _draw() -> void:
 	var w: SimWorld = m.world
 	var t: float = m.t
 	var st: Dictionary = STADIUMS[m.stadium]
-	var bgname: String = st["bg"]
-	if st.has("wx") and st["wx"].has(w.weather):
-		bgname = st["wx"][w.weather]
-	var bg := R.tex(bgname)
-	# arka plan sahayi asagi/yukari tasarsa bos kalmasin diye biraz genis ciz
-	draw_texture_rect(bg, Rect2(-2, -2, K.W + 4, K.H + 4), false)
 	if st["boards"]:
 		_draw_boards(w)
+	var li := 0
+	for lp: Vector2 in st["lamps"]:
+		glow(lp, 95.0 + 8.0 * sin(t * 2.0 + li), Color8(110, 110, 120))
+		li += 1
 	_draw_goal_back(w)
 	# golgeler
 	for p: SimPlayer in w.players:

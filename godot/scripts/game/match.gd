@@ -61,6 +61,7 @@ func _ready() -> void:
 	world.phase_t += intro
 	bot = SimBot.new(1, Game.level)
 	field.m = self
+	field.setup_stadium(stadium, Game.chars[0], Game.chars[1])
 	hud.m = self
 	overlay.draw.connect(_draw_overlay)
 	touchc.m = self
@@ -265,6 +266,8 @@ func _process_events(ev: Array) -> void:
 			"kick_hard":
 				sfx.play("kick", 3.0, 0.85)
 				shake = maxf(shake, 0.15)
+				if b.x < 330.0 or b.x > K.W - 330.0:
+					field.crowd.kick(0.45)
 			"head":
 				sfx.play("head")
 				_ring(Vector2(b.x, b.y), 34.0, Color(1, 1, 1, 0.9), 0.25)
@@ -282,9 +285,11 @@ func _process_events(ev: Array) -> void:
 			"post":
 				sfx.play("post")
 				_say("DİREK!", Color.WHITE, b.x, b.y - 60.0, 1.0)
+				field.crowd.kick(0.5)
 			"doksan_out":
 				sfx.play("ooh")
 				_say("DİREKTEN DÖNDÜ!", GOLD, K.W / 2.0, 240.0, 1.6)
+				field.crowd.kick(0.8)
 			"whistle":
 				sfx.play("whistle")
 				if world.phase == "play":
@@ -294,8 +299,10 @@ func _process_events(ev: Array) -> void:
 			"pu":
 				sfx.play("pu")
 				_say(PU_TEXT.get(parts_e[1], ""), GOLD, b.x, b.y - 50.0, 1.4)
+				field.crowd.kick(0.6)
 			"freeze":
 				sfx.play("freeze")
+				field.crowd.kick(0.6)
 			"shield":
 				sfx.play("shield")
 			"armed":
@@ -303,12 +310,15 @@ func _process_events(ev: Array) -> void:
 			"super_fire", "super_ice":
 				sfx.play(name)
 				shake = maxf(shake, 0.25)
+				field.crowd.kick(0.8)
 			"fire_hit":
 				sfx.play("fire_hit")
+				field.crowd.kick(0.7)
 				_burst(Vector2(b.x, b.y), 18, [Color8(255, 140, 40), Color8(255, 220, 90)], 380.0, 0.5, 6.0)
 			"block":
 				sfx.play("block")
 				_say("KURTARIŞ!", Color8(120, 230, 255), b.x, b.y - 60.0, 1.2)
+				field.crowd.kick(0.75)
 			"pop":
 				sfx.play("pop")
 			"bump", "trip":
@@ -327,11 +337,14 @@ func _process_events(ev: Array) -> void:
 			"golden":
 				sfx.play("golden")
 				banner = ["ALTIN GOL!", 1.6, GOLD, "İLK GOLÜ ATAN KAZANIR"]
+				field.crowd.kick(0.8)
 			"pens":
 				banner = ["PENALTILAR!", 1.6, GOLD, ""]
+				field.crowd.kick(0.8)
 			"end":
 				sfx.play("end")
 				over_t = 0.0
+				field.crowd.kick(1.0, world.winner)
 
 
 func _on_goal(pe: PackedStringArray) -> void:
@@ -341,6 +354,7 @@ func _on_goal(pe: PackedStringArray) -> void:
 	var own := int(pe[4]) == 1
 	sfx.play("goal")
 	sfx.play("cheer", -2.0)
+	field.crowd.kick(1.0, who)
 	goal_flash = 0.35
 	var key := "any"
 	if own:
