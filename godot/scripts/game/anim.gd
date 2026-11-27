@@ -44,11 +44,25 @@ static func draw(ci: CanvasItem, rig: String, name: String, t: float, feet: Vect
 	var k := hc / px_hc * float(m["scale"]) / float(idle["scale"])
 	var frames: Array = m["frames"]
 	var n := frames.size()
-	var fi := int(t * float(m["fps"]))
-	fi = posmod(fi, n) if m["loop"] else clampi(fi, 0, n - 1)
-	var fr: Array = frames[fi]
-	var src := Rect2(fr[0], fr[1], fr[2], fr[3])
+	var ft: float = t * float(m["fps"])
+	var fi := int(floor(ft))
+	var frac: float = ft - floor(ft)
+	var fj := fi + 1
+	if m["loop"]:
+		fi = posmod(fi, n)
+		fj = posmod(fj, n)
+	else:
+		fi = clampi(fi, 0, n - 1)
+		fj = clampi(fj, 0, n - 1)
+	var tex: Texture2D = _tex[rig + "/" + name]
 	var foot := Vector2(m["foot"][0], m["foot"][1])
 	ci.draw_set_transform(feet, rot, Vector2(k * sq.x * (-1.0 if flip else 1.0), k * sq.y))
-	ci.draw_texture_rect_region(_tex[rig + "/" + name], Rect2(-foot, src.size), src, mod)
+	var fr: Array = frames[fi]
+	var src := Rect2(fr[0], fr[1], fr[2], fr[3])
+	ci.draw_texture_rect_region(tex, Rect2(-foot, src.size), src, mod)
+	# iki kare arasi yumusak gecis: 120 Hz ekranda bile kare atlama hissi olmaz
+	if fj != fi and frac > 0.02:
+		var fr2: Array = frames[fj]
+		var src2 := Rect2(fr2[0], fr2[1], fr2[2], fr2[3])
+		ci.draw_texture_rect_region(tex, Rect2(-foot, src2.size), src2, Color(mod.r, mod.g, mod.b, mod.a * frac))
 	ci.draw_set_transform(Vector2.ZERO)

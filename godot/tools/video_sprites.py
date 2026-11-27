@@ -15,9 +15,12 @@ t0 = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
 t1 = float(sys.argv[5]) if len(sys.argv) > 5 else 1e9
 os.makedirs(out, exist_ok=True)
 
-fps = 24.0
+# akicilik: AI videolari 24 kare/sn; hareket telafili ara kare uretimiyle 48'e cikar
+# (oyunda ayrica iki kare arasi yumusak gecis var -> 60/120 Hz ekranda takilma olmaz)
+fps = float(os.environ.get("ANIM_FPS", "48"))
 tmp = tempfile.mkdtemp()
-subprocess.run(["ffmpeg", "-loglevel", "error", "-i", src, "-vsync", "0", f"{tmp}/%04d.png"], check=True)
+vf = f"minterpolate=fps={fps:g}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1"
+subprocess.run(["ffmpeg", "-loglevel", "error", "-i", src, "-vf", vf, "-vsync", "0", f"{tmp}/%04d.png"], check=True)
 files = sorted(glob.glob(f"{tmp}/*.png"))
 files = [f for k, f in enumerate(files) if t0 <= k / fps < t1]
 
