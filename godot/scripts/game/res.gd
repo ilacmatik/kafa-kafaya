@@ -80,6 +80,55 @@ static func portrait(char: int, size: int = 128) -> Texture2D:
 	return t
 
 
+## Daireden tasan portre: alt kisim daireye kirpilir, sac/kafa ustten biraz disari tasar (3B etkisi).
+## Doku SxS; daire merkezi (S/2, S*0.6), yaricapi S*0.35. Cizerken daire kutusunu pop_rect() ile al.
+static func portrait_pop(char: int, size: int = 192) -> Texture2D:
+	var key := "pop%d:%d" % [char, size]
+	if _portraits.has(key):
+		return _portraits[key]
+	var src: Texture2D = pose(char, "idle")
+	var img := src.get_image()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var w := img.get_width()
+	var hx := anchor(char, "idle", 0.5) * w
+	var side := int(w * 0.92)
+	var rx := clampi(int(hx - side / 2.0), 0, max(0, w - side))
+	var head := img.get_region(Rect2i(rx, 0, min(side, w), min(side, img.get_height())))
+	var cx := size / 2.0
+	var cy := size * 0.6
+	var rc := size * 0.35
+	var box := int(rc * 2.0 * 1.12)
+	head.resize(box, box, Image.INTERPOLATE_LANCZOS)
+	var out := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var ox := int(cx - box / 2.0)
+	var oy := int(cy - rc * 1.0 - rc * 0.24)
+	out.blend_rect(head, Rect2i(0, 0, box, box), Vector2i(ox, oy))
+	for yy in size:
+		for xx in size:
+			var col := out.get_pixel(xx, yy)
+			if col.a <= 0.0:
+				continue
+			var d := Vector2(xx + 0.5 - cx, yy + 0.5 - cy).length()
+			var k := clampf(rc - d, 0.0, 1.0)
+			# merkezin ustunde: daire disina tasmaya izin ver (yanlardan fazla genislemeden)
+			if yy + 0.5 < cy and absf(xx + 0.5 - cx) < rc * 1.04:
+				k = 1.0
+			if k < 1.0:
+				col.a *= k
+				out.set_pixel(xx, yy, col)
+	var t := ImageTexture.create_from_image(out)
+	_portraits[key] = t
+	return t
+
+
+## portrait_pop dokusunu, daire merkezi c ve yaricapi r olacak sekilde yerlestiren dikdortgen
+static func pop_rect(c: Vector2, r: float) -> Rect2:
+	var s := r / 0.35
+	return Rect2(c.x - s / 2.0, c.y - s * 0.6, s, s)
+
+
 ## Yazi ciz: dis cizgili (oyun basligi stili).
 static func text(ci: CanvasItem, s: String, size: int, pos: Vector2, col: Color = Color.WHITE,
 		outline: int = 4, align: int = HORIZONTAL_ALIGNMENT_CENTER, title: bool = true,

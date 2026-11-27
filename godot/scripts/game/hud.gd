@@ -72,11 +72,9 @@ func _draw() -> void:
 		draw_circle(Vector2(px, cy), 42, DARK)
 		draw_circle(Vector2(px, cy), 39, P_COLORS[i])
 		draw_circle(Vector2(px, cy), 34, Color8(16, 24, 52))
-		var por := R.portrait(p.char, 128)
-		var ps := 66.0
-		var pr := Rect2(px - ps / 2.0, cy - ps / 2.0 + 2.0, ps, ps)
-		R.draw_tex(self, por, pr, i == 1)
 		draw_arc(Vector2(px, cy), 39, 0, TAU, 48, GOLD, 3.0, true)
+		# kafa dairenin ustunden hafifce tasar
+		R.draw_tex(self, R.portrait_pop(p.char, 192), R.pop_rect(Vector2(px, cy + 1.0), 35.0), i == 1)
 		var name: String = K.DISPLAY_NAMES[p.char]
 		var tag: String = m.hud_tag(i)
 		var plate := Rect2(px - 48 - 214, 12, 214, 32) if i == 0 else Rect2(px + 48, 12, 214, 32)

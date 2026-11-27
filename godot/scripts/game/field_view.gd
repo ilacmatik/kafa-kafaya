@@ -7,11 +7,11 @@ var glows: Array = []   # [pos, r, col]
 
 const STADIUMS := [
 	{"bg": "stadium_night_clean.jpg", "boards": false, "crowd": "crowd_night.json",
-		"mask": "crowd_mask_night.png", "light": 0.82,
+		"mask": "crowd_mask_night.png", "light": 0.82, "ref_y": 494.0,
 		"lamps": [Vector2(90, 80), Vector2(435, 194), Vector2(851, 194), Vector2(1180, 80)]},
 	{"bg": "stadium_timsah_clean.jpg", "boards": true, "wx": {"rain": "stadium_timsah_rain_clean.jpg",
 		"snow": "stadium_timsah_snow_clean.jpg"}, "crowd": "crowd_timsah.json",
-		"mask": "crowd_mask_timsah.png", "light": 0.95, "lamps": []},
+		"mask": "crowd_mask_timsah.png", "light": 0.95, "lamps": [], "ref_y": 562.0},
 ]
 const ADS := [["ULUDAĞ GAZOZ", Color8(255, 214, 60)], ["MATLI", Color8(255, 120, 90)],
 	["TURKCELL", Color8(255, 205, 40)], ["ÖZDİLEK", Color8(255, 255, 255)],
@@ -202,13 +202,22 @@ func _draw_pu(pu: Array, t: float) -> void:
 
 
 func _draw_ref(w: SimWorld, t: float) -> void:
-	var img := R.tex("ref_idle.png")
+	# Hakem sahaya girmez: reklam panolarinin onunde, kucuk boyda topu uzaktan takip eder (Python ile ayni).
+	var pose: String = m.ref_pose[0] if m.ref_pose[1] > 0.0 else "idle"
+	var img := R.tex("ref_%s.png" % pose)
+	if img == null:
+		img = R.tex("ref_idle.png")
 	if img == null:
 		return
-	var h := 118.0
+	var h := 132.0 * 0.46
 	var ww := img.get_width() * h / img.get_height()
 	var x: float = m.ref_x
-	draw_texture_rect(img, Rect2(x - ww / 2.0, 527.0 - h + 4.0, ww, h), false, Color(1, 1, 1, 0.95))
+	# ayaklar reklam panolarinin hemen onunde (sahanin uzak kenari)
+	var y: float = STADIUMS[m.stadium]["ref_y"]
+	draw_set_transform(Vector2(x, y + 2.0), 0.0, Vector2(1.0, 0.28))
+	draw_circle(Vector2.ZERO, 17.0, Color(0, 0, 0, 0.35))
+	draw_set_transform(Vector2.ZERO)
+	R.draw_tex(self, img, Rect2(x - ww / 2.0, y - h, ww, h), w.ball.x < x)
 
 
 # ---------------------------------------------------------------- oyuncular

@@ -32,6 +32,7 @@ var paused := false
 var over_t := 0.0
 var shake := 0.0
 var ref_x := 640.0
+var ref_pose := ["whistle", 1.2]
 var ripple = null
 var pstate := [{"sq": 0.0, "st": 0.0, "air": false}, {"sq": 0.0, "st": 0.0, "air": false}]
 var parts: Array = []
@@ -68,6 +69,7 @@ func _ready() -> void:
 	touchc.enabled = touch_on
 	touchc.visible = touch_on
 	touchc.pressed.connect(_on_touch_pressed)
+	touchc.edit_closed.connect(func(): touchc.visible = touch_on)
 	sfx.start_crowd()
 
 
@@ -142,9 +144,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		var pos: Vector2 = overlay.get_global_transform_with_canvas().affine_inverse() * event.position
 		if paused:
-			if _btn_rect(0, 2).has_point(pos):
+			if touchc.editing:
+				return
+			var n := _pause_n()
+			if _btn_rect(0, n).has_point(pos):
 				_toggle_pause()
-			elif _btn_rect(1, 2).has_point(pos):
+			elif n == 3 and _btn_rect(1, n).has_point(pos):
+				touchc.start_edit()
+			elif _btn_rect(n - 1, n).has_point(pos):
 				_restart()
 		elif world.phase == "over" and over_t > 1.2:
 			if _btn_rect(0, 1).has_point(pos):
@@ -159,7 +166,13 @@ func _notification(what: int) -> void:
 			_toggle_pause()
 
 
+func _pause_n() -> int:
+	return 3 if touch_on else 2
+
+
 func _toggle_pause() -> void:
+	if touchc.editing:
+		return
 	paused = not paused
 	touchc.release_all()
 	sfx.play("click")
@@ -211,6 +224,7 @@ func _physics_process(dt: float) -> void:
 
 
 func _process(_d: float) -> void:
+	hud.visible = not touchc.editing
 	_layout()
 	overlay.queue_redraw()
 
@@ -292,6 +306,7 @@ func _process_events(ev: Array) -> void:
 				field.crowd.kick(0.8)
 			"whistle":
 				sfx.play("whistle")
+				ref_pose = ["whistle", 1.0]
 				if world.phase == "play":
 					banner = ["BAŞLA!", 0.9, GOLD, ""]
 			"pu_spawn":
@@ -323,6 +338,8 @@ func _process_events(ev: Array) -> void:
 				sfx.play("pop")
 			"bump", "trip":
 				sfx.play("block", -4.0)
+				if name == "trip":
+					ref_pose = ["card", 1.8]
 			"magnet", "glove", "bolt", "quake":
 				sfx.play("armed")
 				var idx := int(parts_e[1])
@@ -355,6 +372,7 @@ func _on_goal(pe: PackedStringArray) -> void:
 	sfx.play("goal")
 	sfx.play("cheer", -2.0)
 	field.crowd.kick(1.0, who)
+	ref_pose = ["point", 2.2]
 	goal_flash = 0.35
 	var key := "any"
 	if own:
@@ -397,6 +415,7 @@ func _update_fx(dt: float) -> void:
 	# hakem topu uzaktan takip eder
 	var tx := K.W / 2.0 + 60.0 if world.phase == "ready" else clampf(world.ball.x, 160.0, K.W - 160.0)
 	ref_x += (tx - ref_x) * minf(1.0, dt * 1.2)
+	ref_pose[1] -= dt
 	# inis/sicrama ezilmesi
 	for i in 2:
 		var p: SimPlayer = world.players[i]
@@ -429,6 +448,8 @@ func _button(ci: CanvasItem, r: Rect2, label: String, col: Color) -> void:
 
 
 func _draw_overlay() -> void:
+	if touchc.editing:
+		return
 	var ci: CanvasItem = overlay
 	var vp := get_viewport_rect().size
 	var s := vp.y / 720.0
@@ -465,11 +486,14 @@ func _draw_overlay() -> void:
 		_draw_intro(ci, vp)
 	if world.phase == "over":
 		_draw_over(ci, vp)
-	if paused:
+	if paused and not touchc.editing:
 		ci.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.03, 0.08, 0.72))
 		R.text(ci, "DURAKLATILDI", 100, Vector2(cx, vp.y * 0.38), GOLD, 8)
-		_button(ci, _btn_rect(0, 2), "DEVAM", Color8(40, 160, 80))
-		_button(ci, _btn_rect(1, 2), "YENİDEN BAŞLA", Color8(200, 70, 60))
+		var n := _pause_n()
+		_button(ci, _btn_rect(0, n), "DEVAM", Color8(40, 160, 80))
+		if n == 3:
+			_button(ci, _btn_rect(1, n), "TUŞ DÜZENİ", Color8(50, 90, 190))
+		_button(ci, _btn_rect(n - 1, n), "YENİDEN BAŞLA", Color8(200, 70, 60))
 
 
 func _draw_intro(ci: CanvasItem, vp: Vector2) -> void:
