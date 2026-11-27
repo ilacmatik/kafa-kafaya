@@ -34,6 +34,45 @@ const DEFS := {
 }
 
 static var _tex := {}
+## Kozmetik: parca -> renk (pelerin vb. yeniden boyanir). Ileride magaza/dolap bunu dolduracak.
+static var cosmetics := {}   # char -> {"cape": Color}
+
+
+## Parcayi hedef renge boya: parlaklik korunur, renk degisir (koyu kumas bile canli renge doner).
+static func _recolor(src: Texture2D, col: Color) -> Texture2D:
+	var img := src.get_image()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	# parlakligi 0..1'e yay (koyu pelerin icin)
+	var lo := 1.0
+	var hi := 0.0
+	for y in range(0, img.get_height(), 3):
+		for x in range(0, img.get_width(), 3):
+			var c := img.get_pixel(x, y)
+			if c.a > 0.5:
+				var l := c.get_luminance()
+				lo = minf(lo, l)
+				hi = maxf(hi, l)
+	var span := maxf(0.05, hi - lo)
+	for y in img.get_height():
+		for x in img.get_width():
+			var c2 := img.get_pixel(x, y)
+			if c2.a <= 0.0:
+				continue
+			var l2 := clampf((c2.get_luminance() - lo) / span, 0.0, 1.0)
+			var o: Color
+			if l2 < 0.5:
+				o = Color(0.06, 0.05, 0.07).lerp(col, l2 * 2.0)
+			else:
+				o = col.lerp(col.lightened(0.55), (l2 - 0.5) * 2.0)
+			# koyu dis cizgiler koyu kalsin
+			if c2.get_luminance() < 0.09:
+				o = Color(0.07, 0.06, 0.08)
+			o.a = c2.a
+			img.set_pixel(x, y, o)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 static func has(char: int) -> bool:
@@ -92,8 +131,8 @@ static func target(p: SimPlayer, w: SimWorld, i: int, t: float) -> Dictionary:
 		q["ll_f"] = 1.25
 		q["lu_b"] = -0.25 - 0.2 * up
 		q["ll_b"] = 1.0
-		q["au_f"] = -1.0 - 0.3 * up
-		q["al_f"] = -0.15
+		q["au_f"] = 0.55 + 0.2 * up
+		q["al_f"] = -0.7
 		q["au_b"] = -2.4 - 0.3 * up
 		q["al_b"] = -0.4
 		q["torso"] = -0.05
@@ -204,8 +243,14 @@ static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: flo
 		["head", head, mod],
 		["arm_up_f", sh_f, mod], ["arm_lo_f", el_f, mod],
 	]
+	var cos: Dictionary = cosmetics.get(char, {})
 	for it: Array in order:
 		var tx := _t(rig, it[0])
+		if cos.has(it[0]) and tx != null:
+			var ck := "%s/%s/%s" % [rig, it[0], (cos[it[0]] as Color).to_html()]
+			if not _tex.has(ck):
+				_tex[ck] = _recolor(tx, cos[it[0]])
+			tx = _tex[ck]
 		if tx == null:
 			continue
 		ci.draw_set_transform_matrix(it[1])
