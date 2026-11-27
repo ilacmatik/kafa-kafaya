@@ -58,7 +58,7 @@ func _ready() -> void:
 	touch_on = OS.has_feature("mobile") or OS.get_environment("KAFA_DOKUNMATIK") == "1"
 	mode = Game.mode
 	stadium = Game.stadium
-	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.duration, Game.weather, true)
+	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.duration, Game.weather_now, true)
 	world.phase_t += intro
 	bot = SimBot.new(1, Game.level)
 	field.m = self
@@ -119,6 +119,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_pause()
 			elif kc == KEY_Q:
 				_restart()
+			elif kc == KEY_M:
+				_to_menu()
 			return
 		if world.phase == "over" and over_t > 1.2:
 			if kc == KEY_ENTER or kc == KEY_SPACE:
@@ -146,28 +148,61 @@ func _unhandled_input(event: InputEvent) -> void:
 		if paused:
 			if touchc.editing:
 				return
-			var n := _pause_n()
-			if _btn_rect(0, n).has_point(pos):
-				_toggle_pause()
-			elif n == 3 and _btn_rect(1, n).has_point(pos):
-				touchc.start_edit()
-			elif _btn_rect(n - 1, n).has_point(pos):
-				_restart()
+			var items := _pause_items()
+			for i in items.size():
+				if _vbtn_rect(i, items.size()).has_point(pos):
+					_pause_action(items[i][0])
 		elif world.phase == "over" and over_t > 1.2:
-			if _btn_rect(0, 1).has_point(pos):
+			if _btn_rect(0, 2).has_point(pos):
 				_restart()
+			elif _btn_rect(1, 2).has_point(pos):
+				_to_menu()
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		_toggle_pause()
+		if touchc.editing:
+			touchc._edit_action("save")
+		else:
+			_toggle_pause()
 	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT and touch_on and world != null and world.phase == "play":
 		if not paused:
 			_toggle_pause()
 
 
-func _pause_n() -> int:
-	return 3 if touch_on else 2
+func _pause_items() -> Array:
+	var a := [["resume", "DEVAM", Color8(40, 160, 80)], ["restart", "YENİDEN BAŞLA", Color8(200, 120, 30)]]
+	if touch_on:
+		a.append(["edit", "TUŞ DÜZENİ", Color8(50, 90, 190)])
+	a.append(["menu", "ANA MENÜ", Color8(200, 70, 60)])
+	return a
+
+
+func _pause_action(k: String) -> void:
+	match k:
+		"resume":
+			_toggle_pause()
+		"restart":
+			_restart()
+		"edit":
+			touchc.start_edit()
+		"menu":
+			_to_menu()
+
+
+func _to_menu() -> void:
+	sfx.play("click")
+	Game.go("res://scenes/menu.tscn")
+
+
+## Duraklatma menusu: dikey dugmeler
+func _vbtn_rect(i: int, n: int) -> Rect2:
+	var vp := get_viewport_rect().size
+	var w := 560.0
+	var h := 92.0
+	var gap := 22.0
+	var top := vp.y * 0.56 - (n * h + (n - 1) * gap) / 2.0 + 60.0
+	return Rect2(vp.x / 2.0 - w / 2.0, top + i * (h + gap), w, h)
 
 
 func _toggle_pause() -> void:
@@ -179,7 +214,7 @@ func _toggle_pause() -> void:
 
 
 func _restart() -> void:
-	get_tree().reload_current_scene()
+	Game.start_match()
 
 
 func _held() -> Dictionary:
@@ -488,12 +523,10 @@ func _draw_overlay() -> void:
 		_draw_over(ci, vp)
 	if paused and not touchc.editing:
 		ci.draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.03, 0.08, 0.72))
-		R.text(ci, "DURAKLATILDI", 100, Vector2(cx, vp.y * 0.38), GOLD, 8)
-		var n := _pause_n()
-		_button(ci, _btn_rect(0, n), "DEVAM", Color8(40, 160, 80))
-		if n == 3:
-			_button(ci, _btn_rect(1, n), "TUŞ DÜZENİ", Color8(50, 90, 190))
-		_button(ci, _btn_rect(n - 1, n), "YENİDEN BAŞLA", Color8(200, 70, 60))
+		var items := _pause_items()
+		R.text(ci, "DURAKLATILDI", 96, Vector2(cx, _vbtn_rect(0, items.size()).position.y - 90.0), GOLD, 8)
+		for i in items.size():
+			_button(ci, _vbtn_rect(i, items.size()), items[i][1], items[i][2])
 
 
 func _draw_intro(ci: CanvasItem, vp: Vector2) -> void:
@@ -567,4 +600,5 @@ func _draw_over(ci: CanvasItem, vp: Vector2) -> void:
 		R.text(ci, rows[i][0], int(22 * s), Vector2(cx, y), Color(0.85, 0.9, 1.0), 3, HORIZONTAL_ALIGNMENT_CENTER, false)
 		R.text(ci, str(rows[i][1][1]), int(24 * s), Vector2(cx + 220 * s, y), P_COLORS[1], 3)
 	if over_t > 1.2:
-		_button(ci, _btn_rect(0, 1), "RÖVANŞ", Color8(40, 160, 80))
+		_button(ci, _btn_rect(0, 2), "RÖVANŞ", Color8(40, 160, 80))
+		_button(ci, _btn_rect(1, 2), "ANA MENÜ", Color8(60, 80, 150))
