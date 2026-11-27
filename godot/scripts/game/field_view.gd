@@ -24,6 +24,7 @@ var gsx := 0.29
 var gsy := 1.0
 var bg_node := Node2D.new()
 var crowd: Crowd
+var weather: Node2D
 
 
 func _ready() -> void:
@@ -44,11 +45,15 @@ func _ready() -> void:
 	crowd = Crowd.new()
 	crowd.show_behind_parent = true
 	add_child(crowd)
+	weather = preload("res://scripts/game/weather.gd").new()
+	weather.z_index = 4
+	add_child(weather)
 
 
 ## match.gd stadyum belli olunca cagirir
 func setup_stadium(idx: int, c0: int, c1: int) -> void:
 	var st: Dictionary = STADIUMS[idx]
+	weather.m = m
 	crowd.setup(st["crowd"], st["mask"], st["light"])
 	crowd.set_teams(c0, c1)
 	crowd.fill = 0.0
@@ -242,6 +247,30 @@ func _player_pose(p: SimPlayer, w: SimWorld, i: int) -> Array:
 	return ["idle", "idle", "idle"]
 
 
+## Sut aninda ayagin arkasinda hafif bir ruzgar izi (hizli bacak savurma hissi).
+func _kick_swoosh(p: SimPlayer, h: float) -> void:
+	var k := clampf(1.0 - p.kick_t / 0.24, 0.0, 1.0)
+	var e := 1.0 - pow(1.0 - minf(1.0, k * 1.6), 3.0)
+	var fdir := float(p.face)
+	var hip := Vector2(p.x + fdir * h * 0.02, p.y - h * 0.4)
+	var rad := h * 0.36
+	var a0 := PI / 2.0 + fdir * 0.55      # arkada-asagi
+	var a1 := PI / 2.0 - fdir * 1.45      # onde, kalca hizasi
+	var cur := lerpf(a0, a1, e)
+	var fade := 1.0 - maxf(0.0, (k - 0.55) / 0.45)
+	var n := 12
+	for layer in 3:
+		var rr := rad * (1.0 + 0.09 * layer)
+		var prev := hip + Vector2(cos(a0), sin(a0)) * rr
+		for j in range(1, n + 1):
+			var u := float(j) / n
+			var ang := lerpf(a0, cur, u)
+			var pt := hip + Vector2(cos(ang), sin(ang)) * rr
+			var al := 0.42 * u * fade * (1.0 - 0.3 * layer)
+			draw_line(prev, pt, Color(1, 1, 1, al), (1.0 + 3.5 * u) * (1.0 - 0.25 * layer), true)
+			prev = pt
+
+
 func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 	var pr := _player_pose(p, w, i)
 	var tex := R.pose(p.char, pr[0])
@@ -254,6 +283,8 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 	var tilt := 0.0
 	var bob := 0.0
 	var ps: Dictionary = m.pstate[i]
+	if p.kick_t > 0.0:
+		_kick_swoosh(p, h)
 	if (pose == "idle" or pose == "run") and p.on_ground and absf(p.vx) > 40.0 and p.frozen <= 0.0:
 		bob = absf(sin(p.run_t * 14.0)) * (5.0 if pose == "idle" else 3.0)
 		tilt = sin(p.run_t * 14.0) * (4.0 if pose == "idle" else 2.0) + (3.0 if pose == "run" else 0.0) * (1.0 if p.vx > 0 else -1.0)

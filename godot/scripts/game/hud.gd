@@ -46,6 +46,11 @@ func _draw() -> void:
 	R.panel(self, board.grow(4), Color(0.02, 0.03, 0.08, 0.6), 26)
 	R.panel(self, board, Color8(22, 30, 64), 22, GOLD, 3)
 	draw_rect(Rect2(board.position + Vector2(14, 6), Vector2(board.size.x - 28, 10)), Color(1, 1, 1, 0.06))
+	if w.weather == "wind" and w.wind != 0.0:
+		var wp := Rect2(-70, 92, 140, 24)
+		R.panel(self, wp, Color8(40, 70, 120), 11, Color(1, 1, 1, 0.6), 2)
+		var arrow := "RÜZGAR  →" if w.wind > 0.0 else "←  RÜZGAR"
+		R.text(self, arrow, 14, wp.get_center() - Vector2(0, 1), Color.WHITE, 2)
 	var tt := ""
 	var tc := Color.WHITE
 	if w.pen != null:

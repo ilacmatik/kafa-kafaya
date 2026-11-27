@@ -382,6 +382,8 @@ func _process_events(ev: Array) -> void:
 				_say(K.POWERS[pw][0] + "!", K.POWERS[pw][1], world.players[idx].x, world.players[idx].y - 220.0, 1.4)
 				if name == "quake":
 					shake = 0.6
+			"wind":
+				_say("RÜZGAR DÖNDÜ!", Color8(170, 220, 255), K.W / 2.0, 200.0, 1.4)
 			"net":
 				ripple = [int(parts_e[1]), float(parts_e[2]), 0.0]
 			"goal":
