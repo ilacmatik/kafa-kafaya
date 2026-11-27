@@ -18,7 +18,7 @@ static func def(rig: String) -> Dictionary:
 		var d = JSON.parse_string(FileAccess.get_file_as_string("res://assets/rig/%s/rig.json" % rig))
 		var o := {"pivot": {}, "joint": {}, "extras": d["extras"], "leg_len": float(d["leg_len"]),
 			"height": float(d["height"]), "back_rot": float(d.get("back_rot", -0.55)), "back_scale": float(d.get("back_scale", 1.0)),
-			"size": {}}
+			"thigh_w": float(d.get("thigh_w", 1.0)), "boot_w": float(d.get("boot_w", 1.0)), "size": {}}
 		for k in d["pivot"]:
 			o["pivot"][k] = Vector2(d["pivot"][k][0], d["pivot"][k][1])
 			o["size"][k] = Vector2(d["size"][k][0], d["size"][k][1])
@@ -83,8 +83,9 @@ static func _t(rig: String, part: String) -> Texture2D:
 
 ## Ham poz (aci = radyan, saat yonu +; sarkan uzuv icin - = one dogru)
 static func rest() -> Dictionary:
-	return {"torso": 0.0, "head": 0.0, "au_f": 0.12, "al_f": -0.2, "au_b": -0.1, "al_b": -0.25,
-		"lu_f": -0.06, "ll_f": 0.05, "lu_b": 0.08, "ll_b": 0.05, "cape": 0.0, "dy": 0.0, "dx": 0.0, "body": 0.0}
+	# atletik hazir durus: ayaklar acik, dizler hafif bukuk, kollar govdeden ayri
+	return {"torso": 0.05, "head": -0.04, "au_f": 0.22, "al_f": -0.5, "au_b": -0.22, "al_b": -0.45,
+		"lu_f": -0.26, "ll_f": 0.16, "lu_b": 0.24, "ll_b": 0.14, "cape": 0.0, "dy": 7.0, "dx": 0.0, "body": 0.0, "plant": 0.0}
 
 
 ## Oyuncunun durumundan hedef pozu uret.
@@ -101,24 +102,27 @@ static func target(p: SimPlayer, w: SimWorld, i: int, t: float) -> Dictionary:
 		var f := p.x / stride * TAU * float(p.face)
 		var s := sin(f)
 		var amp := clampf(absf(p.vx) / 300.0, 0.5, 1.0)
-		q["lu_f"] = -0.75 * s * amp
-		q["lu_b"] = 0.75 * s * amp
-		q["ll_f"] = 0.15 + 1.1 * pow(maxf(0.0, sin(f + 1.9)), 2.0) * amp
-		q["ll_b"] = 0.15 + 1.1 * pow(maxf(0.0, sin(f + 1.9 + PI)), 2.0) * amp
-		q["au_f"] = 0.65 * s * amp
-		q["au_b"] = -0.65 * s * amp
-		q["al_f"] = -1.0
-		q["al_b"] = -1.0
-		q["torso"] = 0.13
-		q["head"] = -0.08
-		q["dy"] = -absf(cos(f)) * 16.0 * amp
-		q["cape"] = -0.35 - 0.08 * sin(f * 2.0)
+		# guclu kosu: one egik govde, yuksek diz, 90 derece bukuk kollarla pompalama
+		q["lu_f"] = -0.12 - 0.85 * s * amp
+		q["lu_b"] = -0.12 + 0.85 * s * amp
+		q["ll_f"] = 0.18 + 1.55 * pow(maxf(0.0, sin(f + 1.7)), 1.6) * amp
+		q["ll_b"] = 0.18 + 1.55 * pow(maxf(0.0, sin(f + 1.7 + PI)), 1.6) * amp
+		q["au_f"] = 0.85 * s * amp
+		q["au_b"] = -0.85 * s * amp
+		q["al_f"] = -1.45 - 0.25 * maxf(0.0, -s)
+		q["al_b"] = -1.45 - 0.25 * maxf(0.0, s)
+		q["torso"] = 0.22 + 0.03 * sin(f * 2.0)
+		q["head"] = -0.17
+		q["dy"] = 9.0 - absf(cos(f)) * 22.0 * amp
+		q["cape"] = -0.45 - 0.1 * sin(f * 2.0)
 	else:
 		var b := sin(ph)
-		q["torso"] = -0.015 * b
+		q["torso"] += 0.02 * b
 		q["au_f"] += 0.04 * b
 		q["au_b"] -= 0.04 * b
-		q["dy"] = 3.0 * b
+		q["ll_f"] += 0.05 * b
+		q["ll_b"] += 0.05 * b
+		q["dy"] += 3.0 * b
 		q["cape"] = 0.05 * sin(ph * 0.7)
 	if not p.on_ground:
 		var up := clampf(-p.vy / 600.0, -1.0, 1.0)   # + yukselis
@@ -190,6 +194,9 @@ static func target(p: SimPlayer, w: SimWorld, i: int, t: float) -> Dictionary:
 		q["ll_b"] = 1.0
 		q["au_f"] = -1.5
 		q["au_b"] = 1.0
+	q["plant"] = 0.0
+	if p.on_ground and p.slide_t <= 0.0 and p.bike_t <= 0.0:
+		q["plant"] = 0.75 if running else 1.0
 	q["face"] = 1 if celebrate else 0
 	if w.phase == "goal" and w.scorer != i and w.scorer >= 0:
 		q["face"] = 2
@@ -220,7 +227,18 @@ static func draw(ci: CanvasItem, char, q: Dictionary, feet: Vector2, h: float, f
 	var k: float = h / float(d["height"])
 	var base := Transform2D(rot, feet) * Transform2D(0.0, Vector2(k * sq.x * (-1.0 if flip else 1.0), k * sq.y), 0.0, Vector2.ZERO)
 	var u: float = float(d["height"]) / 830.0   # poz ofsetleri 830 birimlik boya gore yazildi
-	var hip := base * Transform2D(q.get("body", 0.0), Vector2(q.get("dx", 0.0) * u, -float(d["leg_len"]) + q.get("dy", 0.0) * u))
+	var hy: float = -float(d["leg_len"]) + float(q.get("dy", 0.0)) * u
+	if float(q.get("plant", 0.0)) > 0.0 and absf(float(q.get("body", 0.0))) < 0.01:
+		# yerdeyken alttaki taban tam zemine otursun (bukuk dizde ayak havada kalmaz / zemine gomulmez)
+		var lo := -INF
+		for sd in ["f", "b"]:
+			var hj: Transform2D = Transform2D(float(q["torso"]) * 0.4, jn.get("skirt", Vector2.ZERO)) * Transform2D(q["lu_" + sd] - q["torso"] * 0.4, jn["hip_" + sd])
+			var kj: Transform2D = hj * Transform2D(float(q["ll_" + sd]), jn["knee_" + sd])
+			var bp: Vector2 = pv.get("boot_" + sd, Vector2.ZERO)
+			var bs2: Vector2 = d["size"].get("boot_" + sd, Vector2.ZERO)
+			lo = maxf(lo, (kj * Vector2(0.0, bs2.y * 0.97 - bp.y)).y)
+		hy = lerpf(hy, -lo, float(q["plant"]))
+	var hip := base * Transform2D(q.get("body", 0.0), Vector2(q.get("dx", 0.0) * u, hy))
 	var torso := hip * Transform2D(q["torso"], Vector2.ZERO)
 	var skirt := hip * Transform2D(q["torso"] * 0.4, jn.get("skirt", Vector2.ZERO))
 	var head := torso * Transform2D(q["head"], jn["head"])
@@ -277,6 +295,11 @@ static func draw(ci: CanvasItem, char, q: Dictionary, feet: Vector2, h: float, f
 			tx = _tex[ck]
 		if tx == null:
 			continue
-		ci.draw_set_transform_matrix(it[1])
+		var m: Transform2D = it[1]
+		if it[0].begins_with("thigh"):
+			m = m * Transform2D(0.0, Vector2(float(d.get("thigh_w", 1.0)), 1.0), 0.0, Vector2.ZERO)
+		elif it[0].begins_with("boot"):
+			m = m * Transform2D(0.0, Vector2(float(d.get("boot_w", 1.0)), 1.0), 0.0, Vector2.ZERO)
+		ci.draw_set_transform_matrix(m)
 		ci.draw_texture(tx, -pv[it[0]], it[2])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
