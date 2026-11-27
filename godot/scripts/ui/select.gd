@@ -17,6 +17,7 @@ var online := false
 var me := 0
 var rdy := [false, false]
 var leaving := false
+var cupm := false
 
 
 func _ready() -> void:
@@ -26,6 +27,7 @@ func _ready() -> void:
 	if pick[0] == pick[1]:
 		pick[1] = (pick[0] + 3) % 6
 	online = Game.mode in ["host", "client"]
+	cupm = Game.mode == "cup"
 	if online:
 		me = 0 if Game.mode == "host" else 1
 		step = me
@@ -111,6 +113,8 @@ func tick(dt: float) -> void:
 # ---------------------------------------------------------------- girdi
 func on_tap(name: String) -> void:
 	if leaving:
+		return
+	if cupm and name in ["lvl", "dur", "stad", "wx"]:
 		return
 	if online and name in ["lvl", "dur", "stad", "wx"] and me != 0:
 		say("AYARLARI MAÇI KURAN SEÇER")
@@ -206,6 +210,12 @@ func _next() -> void:
 	if roll > 0.0:
 		return
 	play("kick")
+	if cupm:
+		Game.chars[0] = pick[0]
+		Game.save_settings()
+		Game.new_cup(pick[0])
+		Game.go("res://scenes/cup.tscn")
+		return
 	if online:
 		rdy[me] = not rdy[me]
 		_send_pick()
@@ -225,11 +235,15 @@ func _next() -> void:
 func paint() -> void:
 	fit_mirror(R.tex("sel_bg.jpg"))
 	for who in 2:
-		_panel(who)
+		if cupm and who == 1:
+			_cup_panel()
+		else:
+			_panel(who)
 	# orta amblem
 	R.glow(self, Vector2(640, 118), 90, Color(0.25, 0.45, 0.85, 0.45))
 	R.text(self, "VS", 64, Vector2(640, 116 + sin(t * 3.0) * 3.0), GOLD, 6)
-	_chips()
+	if not cupm:
+		_chips()
 	_heroes()
 	_bottom()
 
@@ -291,6 +305,20 @@ func _panel(who: int) -> void:
 	var tag := Rect2((277.0 if left else LW - 277.0) - 135, 221, 270, 34)
 	R.panel(self, tag, scol, 15, Color(1, 1, 1, 0.7), 2)
 	R.text(self, "%s  ·  %s" % [lab, st2], 16, tag.get_center() - Vector2(0, 1), WHITE, 2)
+
+
+func _cup_panel() -> void:
+	var tr := R.tex("cup_gold.png")
+	var pc := Vector2(LW - 118, 124)
+	R.glow(self, pc, 90, Color(1, 0.8, 0.3, 0.35))
+	if tr:
+		var th := 120.0
+		var tw := tr.get_width() * th / tr.get_height()
+		draw_texture_rect(tr, Rect2(pc - Vector2(tw, th) / 2.0 + Vector2(0, sin(t * 2.0) * 3.0), Vector2(tw, th)), false)
+	R.text(self, "KUPA YOLU", 30, Vector2(800, 66), GOLD, 4, HORIZONTAL_ALIGNMENT_LEFT)
+	R.text(self, "5 maç · 5 farklı rakip", 18, Vector2(800, 110), WHITE, 3, HORIZONTAL_ALIGNMENT_LEFT, false)
+	R.text(self, "Hava ve stadyum her turda değişir", 16, Vector2(800, 140), Color8(200, 212, 240), 2, HORIZONTAL_ALIGNMENT_LEFT, false)
+	R.text(self, "Şampiyonluk: +200 ALTIN", 18, Vector2(800, 180), Color8(255, 220, 110), 3, HORIZONTAL_ALIGNMENT_LEFT)
 
 
 func _chips() -> void:
@@ -372,11 +400,15 @@ func _bottom() -> void:
 	R.glow(self, rr.get_center(), 150, Color(1, 0.8, 0.3, 0.35))
 	slice3(R.tex("m2_gold.png"), rr)
 	var nlab := "DEVAM ▶" if step == 0 else "MAÇA BAŞLA ▶"
+	if cupm:
+		nlab = "KUPAYA BAŞLA ▶"
 	if online:
 		nlab = "HAZIRIM ✓" if not rdy[me] else "VAZGEÇ"
 	R.text(self, nlab, 24, rr.get_center(), Color8(40, 26, 6), 0)
 	flat_button("rand", Rect2(maxf(view_l + 14, -200) + 142, y, 150, 44), "RASTGELE", Color8(150, 60, 170), 20)
 	var msg := "1. ADIM: KENDİ KARAKTERİNİ SEÇ" if step == 0 else "2. ADIM: RAKİBİNİ SEÇ"
+	if cupm:
+		msg = "KUPADA OYNAYACAĞIN KARAKTERİ SEÇ"
 	if online:
 		msg = "KARAKTERİNİ SEÇ, HAZIRIM'A BAS" if not rdy[me] else ("RAKİP BEKLENİYOR" + ".".repeat(int(t * 2.0) % 4) if not rdy[1 - me] else "BAŞLIYOR!")
 	R.text(self, msg, 22, Vector2(LW / 2.0 + 40, y + 22), GOLD if step == 0 else Color8(255, 140, 120), 4)

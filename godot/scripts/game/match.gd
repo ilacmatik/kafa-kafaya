@@ -72,10 +72,10 @@ func _ready() -> void:
 	online = mode in ["host", "client"] and Net.connected
 	if mode == "client":
 		me = 1
-	stadium = Game.stadium
-	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.duration, Game.weather_now, true)
+	stadium = Game.m_stadium()
+	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.m_duration(), Game.weather_now, true)
 	world.phase_t += intro
-	bot = SimBot.new(1, Game.level)
+	bot = SimBot.new(1, Game.m_level())
 	field.m = self
 	field.setup_stadium(stadium, Game.chars[0], Game.chars[1])
 	hud.m = self
@@ -187,7 +187,7 @@ func label_for(i: int) -> String:
 func hud_tag(i: int) -> String:
 	if mode == "local2":
 		return "P%d" % (i + 1)
-	if mode == "bot":
+	if mode == "bot" or mode == "cup":
 		return "SEN" if i == 0 else "CPU"
 	return "SEN" if i == me else "RAKİP"
 
@@ -228,7 +228,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if world.phase == "over" and over_t > 1.2:
 			if kc == KEY_ENTER or kc == KEY_SPACE:
-				_restart()
+				if mode == "cup":
+					_cup_continue()
+				else:
+					_restart()
 			return
 		match kc:
 			KEY_ESCAPE, KEY_P:
@@ -257,7 +260,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _vbtn_rect(i, items.size()).has_point(pos):
 					_pause_action(items[i][0])
 		elif world.phase == "over" and over_t > 1.2:
-			if _btn_rect(0, 2).has_point(pos):
+			if mode == "cup":
+				if _btn_rect(0, 1).has_point(pos):
+					_cup_continue()
+			elif _btn_rect(0, 2).has_point(pos):
 				_restart()
 			elif _btn_rect(1, 2).has_point(pos):
 				_to_menu()
@@ -294,6 +300,11 @@ func _pause_action(k: String) -> void:
 			touchc.start_edit()
 		"menu":
 			_to_menu()
+
+
+func _cup_continue() -> void:
+	sfx.play("click")
+	Game.go("res://scenes/cup.tscn")
 
 
 func _to_menu() -> void:
@@ -571,7 +582,21 @@ func _process_events(ev: Array) -> void:
 			"end":
 				sfx.play("end")
 				over_t = 0.0
+				_give_reward()
 				field.crowd.kick(1.0, world.winner)
+
+
+var rewarded := false
+
+
+func _give_reward() -> void:
+	if rewarded or mode == "local2":
+		return
+	rewarded = true
+	var res := 0 if world.winner == 2 else (1 if world.winner == me else -1)
+	Game.add_result(res, int(world.score[me]))
+	if mode == "cup":
+		Game.cup_result = world.winner == me
 
 
 func _on_goal(pe: PackedStringArray) -> void:
@@ -647,7 +672,7 @@ func _btn_rect(i: int, n: int) -> Rect2:
 	var gap := 40.0
 	var total := n * w + (n - 1) * gap
 	var x := vp.x / 2.0 - total / 2.0 + i * (w + gap)
-	return Rect2(x, vp.y * 0.64, w, h)
+	return Rect2(x, vp.y * 0.74, w, h)
 
 
 func _button(ci: CanvasItem, r: Rect2, label: String, col: Color) -> void:
@@ -715,7 +740,7 @@ func _draw_intro(ci: CanvasItem, vp: Vector2) -> void:
 		return
 	var k := minf(1.0, t / 0.45)
 	var ease := 1.0 - pow(1.0 - k, 3.0)
-	var tags := ["SEN", "BİLGİSAYAR"] if mode == "bot" else ["SEN", "RAKİP"]
+	var tags := ["SEN", "BİLGİSAYAR"] if mode in ["bot", "cup"] else ["SEN", "RAKİP"]
 	for side in 2:
 		var c: int = world.players[side].char
 		var tex := R.pose(c, "idle")
@@ -774,6 +799,17 @@ func _draw_over(ci: CanvasItem, vp: Vector2) -> void:
 		R.text(ci, str(rows[i][1][0]), int(24 * s), Vector2(cx - 220 * s, y), P_COLORS[0], 3)
 		R.text(ci, rows[i][0], int(22 * s), Vector2(cx, y), Color(0.85, 0.9, 1.0), 3, HORIZONTAL_ALIGNMENT_CENTER, false)
 		R.text(ci, str(rows[i][1][1]), int(24 * s), Vector2(cx + 220 * s, y), P_COLORS[1], 3)
+	var rw: Dictionary = Game.last_reward if rewarded else {}
+	if rw.size() > 0 and over_t > 0.7:
+		var ry := 478.0 * s
+		var pop := 1.0 + 0.25 * maxf(0.0, 1.0 - (over_t - 0.7) * 4.0)
+		var line := "+%d ALTIN     +%d XP" % [rw["coins"], rw["xp"]]
+		R.text(ci, line, int(30 * s * pop), Vector2(cx, ry), Color8(255, 220, 110), 4)
+		if rw.get("level_up", false):
+			R.text(ci, "SEVİYE ATLADIN!  SEVİYE %d" % rw["level"], int(24 * s), Vector2(cx, ry + 36 * s), Color8(120, 255, 160), 3)
 	if over_t > 1.2:
-		_button(ci, _btn_rect(0, 2), "RÖVANŞ", Color8(40, 160, 80))
-		_button(ci, _btn_rect(1, 2), "ANA MENÜ", Color8(60, 80, 150))
+		if mode == "cup":
+			_button(ci, _btn_rect(0, 1), "DEVAM", Color8(40, 160, 80))
+		else:
+			_button(ci, _btn_rect(0, 2), "RÖVANŞ", Color8(40, 160, 80))
+			_button(ci, _btn_rect(1, 2), "ANA MENÜ", Color8(60, 80, 150))

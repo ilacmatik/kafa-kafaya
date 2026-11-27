@@ -6,7 +6,7 @@ const SMALL := ["keys", "exit"]
 const INFO := {
 	"bot": ["BİLGİSAYARA KARŞI", "Bilgisayara karşı tek maç oyna. Zorluğu sen seç.", "bot"],
 	"online": ["ARKADAŞINLA", "Aynı Wi-Fi'de ya da hotspot ile arkadaşına karşı oyna.", "host"],
-	"cup": ["TURNUVA", "5 maçlık kupa yolunu tamamla, kupayı kaldır. Çok yakında!", "cup"],
+	"cup": ["KUPA YOLU", "5 maçlık kupa yolunu tamamla, kupayı kaldır.", "cup"],
 	"keys": ["KONTROLLER", "Tuşlar, özel hareketler ve süper güçler.", "keys"],
 	"exit": ["ÇIKIŞ", "Oyundan çık.", "exit"],
 }
@@ -89,8 +89,13 @@ func _go(name: String) -> void:
 			play("kick")
 			Game.go("res://scenes/online.tscn")
 		"cup":
-			play("click")
-			say("ÇOK YAKINDA!")
+			play("kick")
+			if not Game.cup.is_empty() and int(Game.cup.get("stage", 0)) < Game.CUP_STAGES.size():
+				Game.mode = "cup"
+				Game.go("res://scenes/cup.tscn")
+			else:
+				Game.mode = "cup"
+				Game.go("res://scenes/select.tscn")
 		"keys":
 			play("click")
 			help_open = true
@@ -117,9 +122,35 @@ func paint() -> void:
 	for i in SMALL.size():
 		_round_button(SMALL[i], Vector2(100 + i * 128, 500))
 	R.text(self, INFO.get(focus, ["", ""])[1], 18, Vector2(60, 668), Color8(225, 232, 245), 3, HORIZONTAL_ALIGNMENT_LEFT, false)
-	R.text(self, VERSION, 14, Vector2(view_r - 14, 18), Color8(170, 185, 215), 2, HORIZONTAL_ALIGNMENT_RIGHT, false)
+	R.text(self, VERSION, 12, Vector2(view_r - 14, LH - 14), Color8(150, 165, 200), 2, HORIZONTAL_ALIGNMENT_RIGHT, false)
+	_profile_bar()
 	if help_open:
 		_help()
+
+
+## Sag ust: seviye rozeti, XP cubugu, altin
+func _profile_bar() -> void:
+	var li := Game.level_info()
+	var x1 := view_r - 24.0
+	var box := Rect2(x1 - 380, 18, 380, 64)
+	R.panel(self, box, Color(0.04, 0.06, 0.16, 0.85), 22, Color(1, 1, 1, 0.35), 2)
+	var bc := Vector2(box.position.x + 34, box.get_center().y)
+	draw_circle(bc, 25, Color8(10, 14, 30))
+	draw_circle(bc, 22, Color8(60, 110, 230))
+	draw_arc(bc, 22, 0, TAU, 40, GOLD, 2.5, true)
+	R.text(self, str(li[0]), 22, bc, WHITE, 3)
+	R.text(self, "SEVİYE", 13, Vector2(box.position.x + 66, box.position.y + 18), Color8(190, 205, 235), 2, HORIZONTAL_ALIGNMENT_LEFT, false)
+	var bar := Rect2(box.position.x + 66, box.position.y + 32, 170, 14)
+	R.panel(self, bar, Color8(16, 22, 46), 7)
+	var k := float(li[1]) / float(li[2])
+	if k > 0.02:
+		R.panel(self, Rect2(bar.position, Vector2(bar.size.x * k, bar.size.y)), Color8(90, 200, 255), 7)
+	R.text(self, "%d/%d XP" % [li[1], li[2]], 11, Vector2(bar.end.x, box.position.y + 18), Color8(170, 190, 225), 2, HORIZONTAL_ALIGNMENT_RIGHT, false)
+	var cc := Vector2(box.end.x - 110, box.get_center().y)
+	draw_circle(cc, 15, Color8(150, 100, 10))
+	draw_circle(cc, 13, Color8(255, 200, 50))
+	draw_arc(cc, 9, 0, TAU, 24, Color8(200, 140, 20), 2.0, true)
+	R.text(self, str(Game.profile["coins"]), 24, Vector2(cc.x + 24, cc.y), Color8(255, 220, 110), 3, HORIZONTAL_ALIGNMENT_LEFT)
 
 
 func _big_button(key: String, r: Rect2, primary: bool) -> void:
@@ -137,10 +168,10 @@ func _big_button(key: String, r: Rect2, primary: bool) -> void:
 	var tcol := Color8(40, 26, 6) if primary else (GOLD if on else WHITE)
 	R.text(self, INFO[key][0], 30 if primary else 25, Vector2(rr.position.x + 96, rr.get_center().y), tcol,
 		0 if primary else 3, HORIZONTAL_ALIGNMENT_LEFT)
-	if key in ["cup"]:
-		var chip := Rect2(rr.end.x - 104, rr.position.y - 8, 92, 24)
-		R.panel(self, chip, Color8(200, 60, 70), 10, WHITE, 2)
-		R.text(self, "YAKINDA", 13, chip.get_center(), WHITE, 2, HORIZONTAL_ALIGNMENT_CENTER, false)
+	if key == "cup" and not Game.cup.is_empty() and int(Game.cup.get("stage", 0)) < Game.CUP_STAGES.size():
+		var chip := Rect2(rr.end.x - 124, rr.position.y - 8, 112, 24)
+		R.panel(self, chip, Color8(40, 150, 70), 10, WHITE, 2)
+		R.text(self, "TUR %d/5" % (int(Game.cup["stage"]) + 1), 13, chip.get_center(), WHITE, 2, HORIZONTAL_ALIGNMENT_CENTER, false)
 	if on and not primary:
 		R.panel(self, rr.grow(2), Color(0, 0, 0, 0), rr.size.y * 0.45, GOLD, 3)
 

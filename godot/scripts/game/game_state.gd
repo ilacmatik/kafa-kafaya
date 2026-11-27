@@ -16,6 +16,22 @@ var weather_now := "clear"  # macta kullanilan
 var stadium := 0
 var cache: Array = []       # yukleme ekraninda onceden yuklenen kaynaklar bellekte kalsin
 
+# --- profil (ilerleme, altin) - ileride kozmetik magazasi bunu kullanacak
+const PROFILE_PATH := "user://profile.json"
+var profile := {"xp": 0, "coins": 0, "matches": 0, "wins": 0, "draws": 0, "losses": 0, "goals": 0, "cups": 0}
+var last_reward := {}       # son macin odulu (mac sonu ekrani gosterir)
+
+# --- kupa yolu
+const CUP_STAGES := [   # ad, bot seviyesi, hava, stadyum
+	["ÇEYREK FİNAL 1", 0, "clear", 1],
+	["ÇEYREK FİNAL 2", 1, "rain", 0],
+	["YARI FİNAL", 1, "wind", 1],
+	["FİNAL ÖNCESİ", 2, "snow", 0],
+	["BÜYÜK FİNAL", 2, "clear", 1],
+]
+var cup := {}               # {"char", "opps", "stage", "lost"}
+var cup_result = null       # null | true | false (son kupa macinin sonucu)
+
 var _fade: ColorRect
 var _layer: CanvasLayer
 var _busy := false
@@ -31,6 +47,7 @@ func _ready() -> void:
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_layer.add_child(_fade)
 	load_settings()
+	load_profile()
 
 
 ## Karartarak sahne degistir.
@@ -95,3 +112,88 @@ func weather_name(w: String) -> String:
 		if x[0] == w:
 			return x[1]
 	return w
+
+
+# ---------------------------------------------------------------- profil
+func load_profile() -> void:
+	if not FileAccess.file_exists(PROFILE_PATH):
+		return
+	var d = JSON.parse_string(FileAccess.get_file_as_string(PROFILE_PATH))
+	if d is Dictionary:
+		for k in profile:
+			if d.has(k):
+				profile[k] = int(d[k])
+		if d.has("cup") and d["cup"] is Dictionary:
+			cup = d["cup"]
+
+
+func save_profile() -> void:
+	var f := FileAccess.open(PROFILE_PATH, FileAccess.WRITE)
+	if f:
+		var d := profile.duplicate()
+		d["cup"] = cup
+		f.store_string(JSON.stringify(d))
+
+
+## Seviye n'den n+1'e gecis icin gereken XP (yavasca artar)
+static func xp_need(lvl: int) -> int:
+	return 100 + (lvl - 1) * 40
+
+
+func level_info() -> Array:   # [seviye, bu seviyedeki xp, gereken]
+	var lvl := 1
+	var xp: int = profile["xp"]
+	while xp >= xp_need(lvl):
+		xp -= xp_need(lvl)
+		lvl += 1
+	return [lvl, xp, xp_need(lvl)]
+
+
+## Mac sonucunu isle, odulu dondur. res: 1 galibiyet, 0 beraberlik, -1 maglubiyet
+func add_result(res: int, goals: int, bonus_coins: int = 0) -> Dictionary:
+	var before: int = level_info()[0]
+	var xp: int = [15, 25, 50][res + 1] + goals * 10
+	var coins: int = [10, 15, 30][res + 1] + goals * 5 + bonus_coins
+	profile["xp"] += xp
+	profile["coins"] += coins
+	profile["matches"] += 1
+	profile["goals"] += goals
+	profile[["losses", "draws", "wins"][res + 1]] += 1
+	var after: int = level_info()[0]
+	last_reward = {"xp": xp, "coins": coins, "level_up": after > before, "level": after}
+	save_profile()
+	return last_reward
+
+
+# ---------------------------------------------------------------- kupa
+func new_cup(char: int) -> void:
+	var pool := []
+	for i in 6:
+		if i != char:
+			pool.append(i)
+	pool.shuffle()
+	# 5 tur: 5 farkli rakip
+	cup = {"char": char, "opps": pool.slice(0, 5), "stage": 0, "lost": false}
+	cup_result = null
+	save_profile()
+
+
+func start_cup_match() -> void:
+	var st: Array = CUP_STAGES[int(cup["stage"])]
+	mode = "cup"
+	chars = [int(cup["char"]), int(cup["opps"][int(cup["stage"])])]
+	weather_now = st[2]
+	go("res://scenes/match.tscn")
+
+
+## Macta kullanilacak degerler (kupada turun ayarlari, aksi halde kullanicinin secimi)
+func m_level() -> int:
+	return int(CUP_STAGES[int(cup["stage"])][1]) if mode == "cup" else level
+
+
+func m_stadium() -> int:
+	return int(CUP_STAGES[int(cup["stage"])][3]) if mode == "cup" else stadium
+
+
+func m_duration() -> float:
+	return 90.0 if mode == "cup" else duration
