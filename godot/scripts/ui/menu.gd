@@ -5,7 +5,7 @@ const BIG := ["bot", "online", "cup"]
 const SMALL := ["keys", "exit"]
 const INFO := {
 	"bot": ["BİLGİSAYARA KARŞI", "Bilgisayara karşı tek maç oyna. Zorluğu sen seç.", "bot"],
-	"online": ["ONLINE MAÇ", "Arkadaşınla internet üzerinden oyna. Çok yakında!", "host"],
+	"online": ["ARKADAŞINLA", "Aynı Wi-Fi'de ya da hotspot ile arkadaşına karşı oyna.", "host"],
 	"cup": ["TURNUVA", "5 maçlık kupa yolunu tamamla, kupayı kaldır. Çok yakında!", "cup"],
 	"keys": ["KONTROLLER", "Tuşlar, özel hareketler ve süper güçler.", "keys"],
 	"exit": ["ÇIKIŞ", "Oyundan çık.", "exit"],
@@ -85,7 +85,10 @@ func _go(name: String) -> void:
 			play("kick")
 			Game.mode = "bot"
 			Game.go("res://scenes/select.tscn")
-		"online", "cup":
+		"online":
+			play("kick")
+			Game.go("res://scenes/online.tscn")
+		"cup":
 			play("click")
 			say("ÇOK YAKINDA!")
 		"keys":
@@ -134,7 +137,7 @@ func _big_button(key: String, r: Rect2, primary: bool) -> void:
 	var tcol := Color8(40, 26, 6) if primary else (GOLD if on else WHITE)
 	R.text(self, INFO[key][0], 30 if primary else 25, Vector2(rr.position.x + 96, rr.get_center().y), tcol,
 		0 if primary else 3, HORIZONTAL_ALIGNMENT_LEFT)
-	if key in ["online", "cup"]:
+	if key in ["cup"]:
 		var chip := Rect2(rr.end.x - 104, rr.position.y - 8, 92, 24)
 		R.panel(self, chip, Color8(200, 60, 70), 10, WHITE, 2)
 		R.text(self, "YAKINDA", 13, chip.get_center(), WHITE, 2, HORIZONTAL_ALIGNMENT_CENTER, false)

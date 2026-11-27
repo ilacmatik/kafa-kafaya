@@ -43,6 +43,18 @@ var press := {"k": false, "s": false, "o": false, "f": false}
 var last_down := -9.0
 var lob_until := -9.0
 var rng := RandomNumberGenerator.new()
+# --- ag
+var online := false
+var net_tick := 0
+var net_ev: Array = []
+var rin := [false, false, false, false, false, 0, 0, 0, 0]   # karsi tarafin son girdisi
+var rcnt := [0, 0, 0, 0]                                     # islenmis basma sayaclari (k, s, o, f)
+var mycnt := [0, 0, 0, 0]
+var ip_prev: Array = []
+var ip_next: Array = []
+var ip_t := 0.0
+var ip_dt := 1.0 / 60.0
+var net_lost := false
 
 @onready var field: Node2D = $Field
 @onready var hud: Node2D = $HUDLayer/HUD
@@ -57,6 +69,9 @@ func _ready() -> void:
 	get_tree().quit_on_go_back = false
 	touch_on = OS.has_feature("mobile") or OS.get_environment("KAFA_DOKUNMATIK") == "1"
 	mode = Game.mode
+	online = mode in ["host", "client"] and Net.connected
+	if mode == "client":
+		me = 1
 	stadium = Game.stadium
 	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.duration, Game.weather_now, true)
 	world.phase_t += intro
@@ -71,6 +86,95 @@ func _ready() -> void:
 	touchc.pressed.connect(_on_touch_pressed)
 	touchc.edit_closed.connect(func(): touchc.visible = touch_on)
 	sfx.start_crowd()
+	if online:
+		Net.snap.connect(_on_snap)
+		Net.remote_input.connect(_on_remote_input)
+		Net.message.connect(_on_net_msg)
+		Net.left.connect(_on_net_left)
+
+
+func _exit_tree() -> void:
+	for pair in [[Net.snap, _on_snap], [Net.remote_input, _on_remote_input], [Net.message, _on_net_msg], [Net.left, _on_net_left]]:
+		if (pair[0] as Signal).is_connected(pair[1]):
+			(pair[0] as Signal).disconnect(pair[1])
+
+
+# ---------------------------------------------------------------- ag
+func _on_remote_input(a: Array) -> void:
+	if a.size() >= 9:
+		rin = a
+
+
+func _on_snap(b: PackedByteArray) -> void:
+	if mode != "client":
+		return
+	var ev := Net.unpack_world(world, b)
+	# ara degerleme: o an gosterilen konumdan yeni konuma yumusak gecis
+	var nxt := _positions()
+	var cur := ip_next
+	if ip_prev.size() > 0 and ip_next.size() > 0:
+		var k := clampf(ip_t / ip_dt, 0.0, 1.0)
+		cur = []
+		for i in ip_prev.size():
+			cur.append(lerpf(ip_prev[i], ip_next[i], k))
+	if ip_t > 0.0:
+		ip_dt = lerpf(ip_dt, clampf(ip_t, 1.0 / 120.0, 0.1), 0.2)
+	ip_prev = cur if cur.size() > 0 else nxt
+	ip_next = nxt
+	ip_t = 0.0
+	_apply_positions(ip_prev)
+	var evs: Array = []
+	for e in ev:
+		var es := String(e)
+		if es.begins_with("_shake:"):
+			shake = maxf(shake, float(es.substr(7)))
+		else:
+			evs.append(es)
+	_process_events(evs)
+
+
+func _positions() -> Array:
+	var w := world
+	return [w.players[0].x, w.players[0].y, w.players[1].x, w.players[1].y, w.ball.x, w.ball.y]
+
+
+func _apply_positions(a: Array) -> void:
+	if a.size() < 6:
+		return
+	world.players[0].x = a[0]
+	world.players[0].y = a[1]
+	world.players[1].x = a[2]
+	world.players[1].y = a[3]
+	world.ball.x = a[4]
+	world.ball.y = a[5]
+
+
+func _on_net_msg(d: Dictionary) -> void:
+	match d.get("t", ""):
+		"again":
+			if mode == "host":
+				_online_rematch()
+		"start":
+			Game.chars = [int(d["c0"]), int(d["c1"])]
+			Game.duration = float(d["dur"])
+			Game.stadium = int(d["stad"])
+			Game.weather_now = str(d["wx"])
+			Game.go("res://scenes/match.tscn")
+
+
+func _on_net_left(reason: String) -> void:
+	if net_lost:
+		return
+	net_lost = true
+	banner = [reason.to_upper(), 2.5, Color8(255, 120, 110), "Ana menüye dönülüyor"]
+	await get_tree().create_timer(2.2).timeout
+	Net.stop()
+	Game.go("res://scenes/menu.tscn")
+
+
+func _online_rematch() -> void:
+	Net.send({"t": "start", "c0": Game.chars[0], "c1": Game.chars[1], "dur": Game.duration, "stad": Game.stadium, "wx": Game.weather_now})
+	Game.go("res://scenes/match.tscn")
 
 
 # ---------------------------------------------------------------- yardimci (cizim icin)
@@ -172,9 +276,11 @@ func _notification(what: int) -> void:
 
 func _pause_items() -> Array:
 	var a := [["resume", "DEVAM", Color8(40, 160, 80)], ["restart", "YENİDEN BAŞLA", Color8(200, 120, 30)]]
+	if online:
+		a = [["resume", "DEVAM", Color8(40, 160, 80)]]
 	if touch_on:
 		a.append(["edit", "TUŞ DÜZENİ", Color8(50, 90, 190)])
-	a.append(["menu", "ANA MENÜ", Color8(200, 70, 60)])
+	a.append(["menu", "MAÇTAN ÇIK" if online else "ANA MENÜ", Color8(200, 70, 60)])
 	return a
 
 
@@ -192,6 +298,9 @@ func _pause_action(k: String) -> void:
 
 func _to_menu() -> void:
 	sfx.play("click")
+	if online:
+		net_lost = true
+		Net.stop()
 	Game.go("res://scenes/menu.tscn")
 
 
@@ -214,6 +323,13 @@ func _toggle_pause() -> void:
 
 
 func _restart() -> void:
+	if online:
+		if mode == "host":
+			_online_rematch()
+		else:
+			Net.send({"t": "again"})
+			banner = ["RÖVANŞ İSTENDİ", 1.5, GOLD, "Rakip onaylayınca başlar"]
+		return
 	Game.start_match()
 
 
@@ -236,6 +352,9 @@ func _held() -> Dictionary:
 
 # ---------------------------------------------------------------- dongu
 func _physics_process(dt: float) -> void:
+	if online:
+		_net_physics(dt)
+		return
 	if paused:
 		return
 	t += dt
@@ -255,6 +374,60 @@ func _physics_process(dt: float) -> void:
 	world.step(dt)
 	_process_events(world.take_events())
 	shake = maxf(shake, world.take_shake())
+	_update_fx(dt)
+
+
+## Ag maci: host simulasyonu yurutur, istemci sadece girdi yollar ve durumu cizer.
+func _net_physics(dt: float) -> void:
+	t += dt
+	if world.phase == "over":
+		over_t += dt
+	var h := _held() if not paused else {"l": false, "r": false, "j": false, "k": false, "d": false}
+	if press["f"]:
+		press["k"] = true
+		lob_until = t + 0.25
+	if t < lob_until:
+		h["d"] = true
+	if mode == "host":
+		world.apply_input(0, h["l"], h["r"], h["j"], press["k"], press["s"], h["k"], press["o"], h["d"], dt)
+		# istemci girdisi: basmalar sayacla gelir (kayip pakette basma kaybolmasin)
+		var kp: bool = int(rin[5]) > rcnt[0]
+		var sp: bool = int(rin[6]) > rcnt[1]
+		var op: bool = int(rin[7]) > rcnt[2]
+		var fp: bool = int(rin[8]) > rcnt[3]
+		rcnt = [int(rin[5]), int(rin[6]), int(rin[7]), int(rin[8])]
+		world.apply_input(1, rin[0], rin[1], rin[2], kp or fp, sp, rin[3], op, rin[4] or fp, dt)
+		world.step(dt)
+		var ev := world.take_events()
+		_process_events(ev)
+		var sh := world.take_shake()
+		shake = maxf(shake, sh)
+		net_ev.append_array(ev)
+		if sh > 0.0:
+			net_ev.append("_shake:%.3f" % sh)
+		net_tick += 1
+		if net_tick % 2 == 0:
+			Net.send_snap(Net.pack_world(world, net_ev))
+			net_ev = []
+	else:
+		if press["k"]:
+			mycnt[0] += 1
+		if press["s"]:
+			mycnt[1] += 1
+		if press["o"]:
+			mycnt[2] += 1
+		if press["f"]:
+			mycnt[3] += 1
+		Net.send_input([h["l"], h["r"], h["j"], h["k"], h["d"], mycnt[0], mycnt[1], mycnt[2], mycnt[3]])
+		ip_t += dt
+		if ip_prev.size() > 0 and ip_next.size() > 0:
+			var k := clampf(ip_t / ip_dt, 0.0, 1.0)
+			var cur := []
+			for i in ip_prev.size():
+				cur.append(lerpf(ip_prev[i], ip_next[i], k))
+			_apply_positions(cur)
+	for k2 in press:
+		press[k2] = false
 	_update_fx(dt)
 
 

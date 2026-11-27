@@ -212,7 +212,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		if n2 != "":
 			set_focus(n2)
 	elif e is InputEventKey and e.pressed and not e.echo:
-		if e.physical_keycode == KEY_ESCAPE or e.physical_keycode == KEY_BACKSPACE:
+		if e.physical_keycode == KEY_ESCAPE:
 			on_back()
 		else:
 			on_key(e.physical_keycode)

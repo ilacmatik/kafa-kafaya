@@ -13,6 +13,10 @@ var anim := [[-1, 0.0], [-1, 0.0]]
 var roll := 0.0
 var roll_tick := 0.0
 var rng := RandomNumberGenerator.new()
+var online := false
+var me := 0
+var rdy := [false, false]
+var leaving := false
 
 
 func _ready() -> void:
@@ -21,6 +25,68 @@ func _ready() -> void:
 	pick = Game.chars.duplicate()
 	if pick[0] == pick[1]:
 		pick[1] = (pick[0] + 3) % 6
+	online = Game.mode in ["host", "client"]
+	if online:
+		me = 0 if Game.mode == "host" else 1
+		step = me
+		Net.message.connect(_on_msg)
+		Net.left.connect(_on_left)
+		_send_pick()
+		if me == 0:
+			_send_cfg()
+
+
+func _exit_tree() -> void:
+	if Net.message.is_connected(_on_msg):
+		Net.message.disconnect(_on_msg)
+	if Net.left.is_connected(_on_left):
+		Net.left.disconnect(_on_left)
+
+
+# ---------------------------------------------------------------- ag
+func _send_pick() -> void:
+	Net.send({"t": "pick", "c": pick[me], "r": rdy[me]})
+
+
+func _send_cfg() -> void:
+	Net.send({"t": "cfg", "dur": Game.duration, "stad": Game.stadium, "wx": Game.weather})
+
+
+func _on_msg(d: Dictionary) -> void:
+	match d.get("t", ""):
+		"pick":
+			pick[1 - me] = int(d["c"])
+			rdy[1 - me] = bool(d["r"])
+			if me == 0:
+				_maybe_start()
+		"cfg":
+			Game.duration = float(d["dur"])
+			Game.stadium = int(d["stad"])
+			Game.weather = str(d["wx"])
+		"start":
+			Game.chars = [int(d["c0"]), int(d["c1"])]
+			Game.duration = float(d["dur"])
+			Game.stadium = int(d["stad"])
+			Game.weather_now = str(d["wx"])
+			Game.go("res://scenes/match.tscn")
+
+
+func _on_left(reason: String) -> void:
+	say(reason.to_upper(), 2.0)
+	leaving = true
+	await get_tree().create_timer(1.6).timeout
+	Game.go("res://scenes/online.tscn")
+
+
+func _maybe_start() -> void:
+	if rdy[0] and rdy[1]:
+		Game.chars = pick.duplicate()
+		Game.weather_now = Game.weather
+		if Game.weather == "random":
+			Game.weather_now = ["clear", "clear", "rain", "snow", "wind"][rng.randi_range(0, 4)]
+		Net.send({"t": "start", "c0": pick[0], "c1": pick[1], "dur": Game.duration, "stad": Game.stadium, "wx": Game.weather_now})
+		Game.save_settings()
+		Game.go("res://scenes/match.tscn")
 
 
 func tick(dt: float) -> void:
@@ -38,10 +104,19 @@ func tick(dt: float) -> void:
 			roll_tick = 0.06 + (0.75 - roll) * 0.12
 			pick[step] = (pick[step] + 1 + rng.randi_range(0, 4)) % 6
 			play("click")
+			if online:
+				_send_pick()
 
 
 # ---------------------------------------------------------------- girdi
 func on_tap(name: String) -> void:
+	if leaving:
+		return
+	if online and name in ["lvl", "dur", "stad", "wx"] and me != 0:
+		say("AYARLARI MAÇI KURAN SEÇER")
+		return
+	if online and rdy[me] and (name.begins_with("hero") or name == "rand"):
+		return
 	if name.begins_with("hero"):
 		var i := int(name.substr(4))
 		if roll > 0.0:
@@ -77,16 +152,26 @@ func on_tap(name: String) -> void:
 					j = k
 			Game.weather = Game.WEATHERS[(j + 1) % Game.WEATHERS.size()][0]
 			play("click")
+	if online:
+		if name in ["dur", "stad", "wx"]:
+			_send_cfg()
+		_send_pick()
 
 
 func on_key(kc: int) -> void:
 	match kc:
 		KEY_LEFT, KEY_A:
-			pick[step] = (pick[step] + 5) % 6
-			play("click")
+			if not (online and rdy[me]):
+				pick[step] = (pick[step] + 5) % 6
+				play("click")
+				if online:
+					_send_pick()
 		KEY_RIGHT, KEY_D:
-			pick[step] = (pick[step] + 1) % 6
-			play("click")
+			if not (online and rdy[me]):
+				pick[step] = (pick[step] + 1) % 6
+				play("click")
+				if online:
+					_send_pick()
 		KEY_ENTER, KEY_SPACE, KEY_KP_ENTER:
 			_next()
 		KEY_R:
@@ -103,6 +188,14 @@ func on_key(kc: int) -> void:
 
 func on_back() -> void:
 	play("click")
+	if online:
+		if rdy[me]:
+			rdy[me] = false
+			_send_pick()
+		else:
+			Net.stop()
+			Game.go("res://scenes/online.tscn")
+		return
 	if step == 1:
 		step = 0
 	else:
@@ -113,6 +206,12 @@ func _next() -> void:
 	if roll > 0.0:
 		return
 	play("kick")
+	if online:
+		rdy[me] = not rdy[me]
+		_send_pick()
+		if me == 0:
+			_maybe_start()
+		return
 	if step == 0:
 		step = 1
 		if pick[1] == pick[0]:
@@ -176,7 +275,12 @@ func _panel(who: int) -> void:
 	var lab := "SEN" if left else "BİLGİSAYAR"
 	var st2 := ""
 	var scol := col.darkened(0.15)
-	if who == 0:
+	if online:
+		lab = "SEN" if who == me else "RAKİP"
+		st2 = "HAZIR" if rdy[who] else "SEÇİYOR" + ".".repeat(int(t * 2.0) % 4)
+		if rdy[who]:
+			scol = Color8(40, 170, 70)
+	elif who == 0:
 		st2 = "HAZIR" if step == 1 else "SEÇİYOR" + ".".repeat(int(t * 2.0) % 4)
 		if step == 1:
 			scol = Color8(40, 170, 70)
@@ -198,6 +302,8 @@ func _chips() -> void:
 			{"clear": Color8(200, 140, 30), "rain": Color8(50, 90, 160), "snow": Color8(120, 150, 190),
 			"wind": Color8(60, 140, 150), "random": Color8(110, 70, 160)}.get(Game.weather, Color8(60, 60, 90))],
 	]
+	if online:
+		items.remove_at(0)
 	for n in items.size():
 		var it: Array = items[n]
 		var r := Rect2(463 + (n % 2) * 182, 214 + (n / 2) * 52, 172, 44)
@@ -216,7 +322,7 @@ func _heroes() -> void:
 	for i: int in order:
 		var cx: float = PODIUMS[i]
 		var sel0: bool = pick[0] == i
-		var sel1: bool = pick[1] == i and step == 1
+		var sel1: bool = pick[1] == i and (step == 1 or online)
 		var f: float = focus_k[i]
 		reg("hero%d" % i, Rect2(cx - 90, 340, 180, 330))
 		var cur: bool = pick[step] == i
@@ -243,9 +349,9 @@ func _heroes() -> void:
 		R.text(self, K.DISPLAY_NAMES[i], int(19 + 5 * f), Vector2(cx, 632 + 4 * f), GOLD if (sel0 or sel1) else Color8(200, 205, 220), 3)
 		var tags := []
 		if sel0:
-			tags.append([0, "SEN"])
+			tags.append([0, "SEN" if me == 0 else "RAKİP"])
 		if sel1:
-			tags.append([1, "RAKİP"])
+			tags.append([1, "RAKİP" if me == 0 else "SEN"])
 		for n in tags.size():
 			var who: int = tags[n][0]
 			var ty := 340.0 - n * 32.0 + sin(t * 5.0) * 3.0 - 30.0 * f
@@ -265,7 +371,12 @@ func _bottom() -> void:
 	var rr := nr.grow(-4.0 * pk + 2.0 * sin(t * 4.0))
 	R.glow(self, rr.get_center(), 150, Color(1, 0.8, 0.3, 0.35))
 	slice3(R.tex("m2_gold.png"), rr)
-	R.text(self, "DEVAM ▶" if step == 0 else "MAÇA BAŞLA ▶", 24, rr.get_center(), Color8(40, 26, 6), 0)
+	var nlab := "DEVAM ▶" if step == 0 else "MAÇA BAŞLA ▶"
+	if online:
+		nlab = "HAZIRIM ✓" if not rdy[me] else "VAZGEÇ"
+	R.text(self, nlab, 24, rr.get_center(), Color8(40, 26, 6), 0)
 	flat_button("rand", Rect2(maxf(view_l + 14, -200) + 142, y, 150, 44), "RASTGELE", Color8(150, 60, 170), 20)
 	var msg := "1. ADIM: KENDİ KARAKTERİNİ SEÇ" if step == 0 else "2. ADIM: RAKİBİNİ SEÇ"
+	if online:
+		msg = "KARAKTERİNİ SEÇ, HAZIRIM'A BAS" if not rdy[me] else ("RAKİP BEKLENİYOR" + ".".repeat(int(t * 2.0) % 4) if not rdy[1 - me] else "BAŞLIYOR!")
 	R.text(self, msg, 22, Vector2(LW / 2.0 + 40, y + 22), GOLD if step == 0 else Color8(255, 140, 120), 4)

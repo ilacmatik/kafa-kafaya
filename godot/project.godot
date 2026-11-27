@@ -12,6 +12,7 @@ boot_splash/show_image=false
 
 [autoload]
 Game="*res://scripts/game/game_state.gd"
+Net="*res://scripts/net/net.gd"
 
 [display]
 window/size/viewport_width=1920
