@@ -28,7 +28,7 @@ func _draw():
 		var q := Rig.target(p, w, 0, 0.5)
 		var col := n % 6
 		var row := n / 6
-		Rig.draw(self, 0, q, Vector2(160 + col * 320, 470 + row * 530), 380.0, p.face < 0)
+		Rig.draw(self, int(OS.get_environment("RIG_C")) if OS.get_environment("RIG_C") != "" else 0, q, Vector2(160 + col * 320, 470 + row * 530), 380.0, p.face < 0)
 		draw_string(ThemeDB.fallback_font, Vector2(100 + col * 320, 500 + row * 530), c + ' ' + str(v), HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
 """
 	sc.reload()

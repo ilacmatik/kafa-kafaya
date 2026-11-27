@@ -5,7 +5,7 @@ class_name Rig
 extends RefCounted
 
 ## Karakter -> rig adi (simdilik deneme: ALEV yerine Alev Sovalyesi)
-const CHAR_RIG := {0: "flame_knight"}
+const CHAR_RIG := {0: "flame_knight", 2: "stone_guardian"}
 
 ## Parca: dokudaki eklem noktasi (piksel). Eklem: ebeveyn parcanin eklem noktasina gore konum.
 const DEFS := {
@@ -30,6 +30,30 @@ const DEFS := {
 		"height": 830.0,        # taban -> sac ucu
 		"sword_rot": -0.55,
 		"head_scale": 1.12,
+	},
+	"stone_guardian": {
+		"pivot": {
+			"torso": Vector2(224, 352), "head": Vector2(192, 468), "skirt": Vector2(190, 22),
+			"arm_up_f": Vector2(150, 105), "arm_lo_f": Vector2(120, 34),
+			"arm_up_b": Vector2(92, 42), "arm_lo_b": Vector2(50, 46),
+			"thigh_f": Vector2(100, 28), "boot_f": Vector2(70, 28),
+			"cape": Vector2(285, 34), "shield": Vector2(271, 288),
+		},
+		"alias": {"thigh_b": "thigh_f", "boot_b": "boot_f"},
+		"joint": {
+			"torso": Vector2(0, 10), "skirt": Vector2(0, -8), "head": Vector2(-8, -300),
+			"shoulder_f": Vector2(-170, -250), "shoulder_b": Vector2(118, -262),
+			"elbow_f": Vector2(-6, 150), "elbow_b": Vector2(36, 168),
+			"hip_f": Vector2(-96, 214), "hip_b": Vector2(118, 214),
+			"knee_f": Vector2(28, 208), "knee_b": Vector2(28, 208),
+			"cape": Vector2(-60, -300), "sword": Vector2(-70, -160),
+		},
+		"back_item": "shield",
+		"back_scale": 0.85,
+		"sword_rot": -0.15,
+		"leg_len": 676.0,
+		"height": 1500.0,
+		"head_scale": 1.08,
 	},
 }
 
@@ -82,8 +106,16 @@ static func has(char: int) -> bool:
 static func _t(rig: String, part: String) -> Texture2D:
 	var key := rig + "/" + part
 	if not _tex.has(key):
-		_tex[key] = R.tex("rig/%s/%s.png" % [rig, part])
+		var f: String = DEFS[rig].get("alias", {}).get(part, part)
+		_tex[key] = R.tex("rig/%s/%s.png" % [rig, f])
 	return _tex[key]
+
+
+static func _pv(d: Dictionary, part: String) -> Vector2:
+	var pv: Dictionary = d["pivot"]
+	if pv.has(part):
+		return pv[part]
+	return pv.get(d.get("alias", {}).get(part, part), Vector2.ZERO)
 
 
 ## Ham poz (aci = radyan, saat yonu +; sarkan uzuv icin - = one dogru)
@@ -232,10 +264,12 @@ static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: flo
 	var hp_b := skirt * Transform2D(q["lu_b"] - q["torso"] * 0.4, jn["hip_b"])
 	var kn_b := hp_b * Transform2D(q["ll_b"], jn["knee_b"])
 	var cape := torso * Transform2D(q["cape"], jn["cape"])
-	var sword := torso * Transform2D(float(d["sword_rot"]), jn["sword"])
+	var bsc: float = d.get("back_scale", 1.0)
+	var sword := torso * Transform2D(float(d["sword_rot"]), Vector2(bsc, bsc), 0.0, jn["sword"])
+	var bitem: String = d.get("back_item", "sword")
 	var back := Color(mod.r * 0.78, mod.g * 0.74, mod.b * 0.74, mod.a)
 	var order := [
-		["cape", cape, back], ["sword", sword, mod],
+		["cape", cape, back], [bitem, sword, mod],
 		["arm_up_b", sh_b, back], ["arm_lo_b", el_b, back],
 		["thigh_b", hp_b, back], ["boot_b", kn_b, back],
 		["thigh_f", hp_f, mod], ["boot_f", kn_f, mod],
@@ -254,5 +288,5 @@ static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: flo
 		if tx == null:
 			continue
 		ci.draw_set_transform_matrix(it[1])
-		ci.draw_texture(tx, -pv[it[0]], it[2])
+		ci.draw_texture(tx, -_pv(d, it[0]), it[2])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
