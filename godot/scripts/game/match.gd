@@ -55,6 +55,12 @@ var ip_next: Array = []
 var ip_t := 0.0
 var ip_dt := 1.0 / 60.0
 var net_lost := false
+var pen_view: Node2D
+
+
+## Penalti nisani icin anlik yon girdisi
+func aim_input() -> Dictionary:
+	return _held()
 
 @onready var field: Node2D = $Field
 @onready var hud: Node2D = $HUDLayer/HUD
@@ -77,6 +83,12 @@ func _ready() -> void:
 	world.phase_t += intro
 	bot = SimBot.new(1, Game.m_level())
 	field.m = self
+	var pl := CanvasLayer.new()
+	pl.layer = 1
+	add_child(pl)
+	pen_view = preload("res://scripts/game/pen_view.gd").new()
+	pen_view.m = self
+	pl.add_child(pen_view)
 	field.setup_stadium(stadium, Game.chars[0], Game.chars[1])
 	hud.m = self
 	overlay.draw.connect(_draw_overlay)
@@ -580,7 +592,31 @@ func _process_events(ev: Array) -> void:
 				field.crowd.kick(0.8)
 			"pens":
 				banner = ["PENALTILAR!", 1.6, GOLD, ""]
+				sfx.play("golden")
 				field.crowd.kick(0.8)
+			"pen_lock":
+				sfx.play("click")
+			"pen_kick":
+				sfx.play("kick")
+				field.crowd.kick(0.7)
+			"pen_goal":
+				var who := int(parts_e[1])
+				sfx.play("goal")
+				sfx.play("cheer", -2.0)
+				banner = ["GOL!", 1.2, P_COLORS[who], ""]
+				field.crowd.kick(1.0, who)
+				Game.vibrate(120 if who == me else 40)
+			"pen_save":
+				var who2 := int(parts_e[1])
+				sfx.play("block")
+				sfx.play("ooh", -4.0)
+				banner = ["KURTARDI!", 1.2, Color8(120, 220, 255), ""]
+				field.crowd.kick(1.0, 1 - who2)
+			"pen_miss":
+				var who3 := int(parts_e[1])
+				sfx.play("ooh")
+				banner = ["KAÇTI!", 1.2, Color8(255, 120, 110), ""]
+				field.crowd.kick(1.0, 1 - who3)
 			"end":
 				sfx.play("end")
 				over_t = 0.0
