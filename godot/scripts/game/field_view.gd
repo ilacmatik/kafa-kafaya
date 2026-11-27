@@ -79,7 +79,11 @@ func _draw_add() -> void:
 		R.glow(add_layer, g[0], g[1], g[2])
 
 
+var last_dt := 1.0 / 60.0
+
+
 func _process(dt: float) -> void:
+	last_dt = dt
 	glows.clear()
 	if crowd.fans.size() > 0 and not (m != null and m.paused):
 		crowd.update(dt)
@@ -314,16 +318,26 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 	if p.armed > 0.0:
 		var pc: Color = K.POWERS[p.stats["power"]][1]
 		glow(Vector2(p.x, p.y - h * 0.5), 95.0 + 8.0 * sin(t * 12.0), pc * 0.45)
-	var size: Vector2 = Vector2(tex.get_width(), tex.get_height()) * f * Vector2(sx, sy)
-	var ax := R.anchor(p.char, akey, 0.40 if pose == "kick" else 0.5)
-	# kafa hizasi: her pozda kafa oyuncunun x konumunda dursun; ayna icin olcek -1
-	var pivot := Vector2(p.x, p.y - bob)
-	var rot := deg_to_rad(tilt * (1.0 if not flip else -1.0)) if tilt != 0.0 else 0.0
-	draw_set_transform(pivot, rot, Vector2(-1.0 if flip else 1.0, 1.0))
-	var rr := Rect2(-size.x * ax, -size.y, size.x, size.y)
-	var modc := Color(0.7, 0.88, 1.0) if p.frozen > 0.0 else Color.WHITE
-	draw_texture_rect(tex, rr, false, modc)
-	draw_set_transform(Vector2.ZERO)
+	if Rig.has(p.char):
+		# iskelet animasyonu
+		if not ps.has("rig"):
+			ps["rig"] = Rig.rest()
+		var tq := Rig.target(p, w, i, t)
+		Rig.blend(ps["rig"], tq, last_dt, p.kick_t > 0.0 or p.bike_t > 0.0)
+		var modr := Color(0.7, 0.88, 1.0) if p.frozen > 0.0 else Color.WHITE
+		var rrot := deg_to_rad(tilt * (1.0 if not flip else -1.0)) * 0.5 if (p.stun > 0.0 or pose == "slide") else 0.0
+		Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), h * 1.2, flip, modr, Vector2(sx, sy), rrot)
+	else:
+		var size: Vector2 = Vector2(tex.get_width(), tex.get_height()) * f * Vector2(sx, sy)
+		var ax := R.anchor(p.char, akey, 0.40 if pose == "kick" else 0.5)
+		# kafa hizasi: her pozda kafa oyuncunun x konumunda dursun; ayna icin olcek -1
+		var pivot := Vector2(p.x, p.y - bob)
+		var rot := deg_to_rad(tilt * (1.0 if not flip else -1.0)) if tilt != 0.0 else 0.0
+		draw_set_transform(pivot, rot, Vector2(-1.0 if flip else 1.0, 1.0))
+		var rr := Rect2(-size.x * ax, -size.y, size.x, size.y)
+		var modc := Color(0.7, 0.88, 1.0) if p.frozen > 0.0 else Color.WHITE
+		draw_texture_rect(tex, rr, false, modc)
+		draw_set_transform(Vector2.ZERO)
 	if p.frozen > 0.0:
 		var blk := Rect2(p.x - 48, p.y + 4 - (h + 26), 96, h + 26)
 		R.panel(self, blk, Color(0.59, 0.86, 1.0, 0.27), 14, Color8(220, 245, 255), 3)
