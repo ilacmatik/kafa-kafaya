@@ -4,58 +4,29 @@
 class_name Rig
 extends RefCounted
 
-## Karakter -> rig adi (simdilik deneme: ALEV yerine Alev Sovalyesi)
-const CHAR_RIG := {0: "flame_knight", 2: "stone_guardian"}
+## Kahraman sirasi (karakter numarasi -> rig klasoru). Parcalar ve eklemler assets/rig/<ad>/rig.json'dan.
+const HEROES := ["flame_knight", "frost_knight", "stone_guardian", "blade_master",
+	"storm_shaman", "spirit_shaman", "shadow_ninja", "forest_archer"]
+## Gecis: eski futbolcu numaralari -> kahraman (karakter secimi 8'e cikana kadar)
+const CHAR_RIG := {0: "flame_knight", 1: "blade_master", 2: "stone_guardian", 3: "frost_knight",
+	4: "shadow_ninja", 5: "storm_shaman"}
+static var _defs := {}
 
-## Parca: dokudaki eklem noktasi (piksel). Eklem: ebeveyn parcanin eklem noktasina gore konum.
-const DEFS := {
-	"flame_knight": {
-		"pivot": {
-			"torso": Vector2(117, 226), "head": Vector2(118, 296), "skirt": Vector2(107, 10),
-			"arm_up_f": Vector2(70, 32), "arm_lo_f": Vector2(78, 22),
-			"arm_up_b": Vector2(50, 30), "arm_lo_b": Vector2(22, 50),
-			"thigh_f": Vector2(40, 20), "boot_f": Vector2(70, 16),
-			"thigh_b": Vector2(54, 20), "boot_b": Vector2(73, 16),
-			"cape": Vector2(174, 14), "sword": Vector2(52, 170),
-		},
-		"joint": {
-			"torso": Vector2(0, 6), "skirt": Vector2(-2, -6), "head": Vector2(-19, -198),
-			"shoulder_f": Vector2(-94, -172), "shoulder_b": Vector2(60, -172),
-			"elbow_f": Vector2(-28, 104), "elbow_b": Vector2(22, 106),
-			"hip_f": Vector2(-44, 34), "hip_b": Vector2(42, 34),
-			"knee_f": Vector2(-6, 116), "knee_b": Vector2(12, 116),
-			"cape": Vector2(-34, -196), "sword": Vector2(-30, -110),
-		},
-		"leg_len": 318.0,       # kalca -> taban (duz bacak)
-		"height": 830.0,        # taban -> sac ucu
-		"sword_rot": -0.55,
-		"head_scale": 1.12,
-	},
-	"stone_guardian": {
-		"pivot": {
-			"torso": Vector2(224, 352), "head": Vector2(192, 468), "skirt": Vector2(190, 22),
-			"arm_up_f": Vector2(150, 105), "arm_lo_f": Vector2(120, 34),
-			"arm_up_b": Vector2(92, 42), "arm_lo_b": Vector2(50, 46),
-			"thigh_f": Vector2(100, 28), "boot_f": Vector2(70, 28),
-			"cape": Vector2(285, 34), "shield": Vector2(271, 288),
-		},
-		"alias": {"thigh_b": "thigh_f", "boot_b": "boot_f"},
-		"joint": {
-			"torso": Vector2(0, 10), "skirt": Vector2(0, -8), "head": Vector2(-8, -300),
-			"shoulder_f": Vector2(-170, -250), "shoulder_b": Vector2(118, -262),
-			"elbow_f": Vector2(-6, 150), "elbow_b": Vector2(36, 168),
-			"hip_f": Vector2(-96, 214), "hip_b": Vector2(118, 214),
-			"knee_f": Vector2(28, 208), "knee_b": Vector2(28, 208),
-			"cape": Vector2(-60, -300), "sword": Vector2(-70, -160),
-		},
-		"back_item": "shield",
-		"back_scale": 0.85,
-		"sword_rot": -0.15,
-		"leg_len": 676.0,
-		"height": 1500.0,
-		"head_scale": 1.08,
-	},
-}
+
+static func def(rig: String) -> Dictionary:
+	if not _defs.has(rig):
+		var d = JSON.parse_string(FileAccess.get_file_as_string("res://assets/rig/%s/rig.json" % rig))
+		var o := {"pivot": {}, "joint": {}, "extras": d["extras"], "leg_len": float(d["leg_len"]),
+			"height": float(d["height"]), "back_rot": float(d.get("back_rot", -0.55)), "back_scale": float(d.get("back_scale", 1.0)),
+			"size": {}}
+		for k in d["pivot"]:
+			o["pivot"][k] = Vector2(d["pivot"][k][0], d["pivot"][k][1])
+			o["size"][k] = Vector2(d["size"][k][0], d["size"][k][1])
+		for k in d["joint"]:
+			o["joint"][k] = Vector2(d["joint"][k][0], d["joint"][k][1])
+		_defs[rig] = o
+	return _defs[rig]
+
 
 static var _tex := {}
 ## Kozmetik: parca -> renk (pelerin vb. yeniden boyanir). Ileride magaza/dolap bunu dolduracak.
@@ -106,16 +77,8 @@ static func has(char: int) -> bool:
 static func _t(rig: String, part: String) -> Texture2D:
 	var key := rig + "/" + part
 	if not _tex.has(key):
-		var f: String = DEFS[rig].get("alias", {}).get(part, part)
-		_tex[key] = R.tex("rig/%s/%s.png" % [rig, f])
+		_tex[key] = R.tex("rig/%s/%s.png" % [rig, part])
 	return _tex[key]
-
-
-static func _pv(d: Dictionary, part: String) -> Vector2:
-	var pv: Dictionary = d["pivot"]
-	if pv.has(part):
-		return pv[part]
-	return pv.get(d.get("alias", {}).get(part, part), Vector2.ZERO)
 
 
 ## Ham poz (aci = radyan, saat yonu +; sarkan uzuv icin - = one dogru)
@@ -227,7 +190,11 @@ static func target(p: SimPlayer, w: SimWorld, i: int, t: float) -> Dictionary:
 		q["ll_b"] = 1.0
 		q["au_f"] = -1.5
 		q["au_b"] = 1.0
+	q["face"] = 1 if celebrate else 0
+	if w.phase == "goal" and w.scorer != i and w.scorer >= 0:
+		q["face"] = 2
 	if p.stun > 0.0:
+		q["face"] = 2
 		q["head"] = sin(t * 22.0) * 0.18
 		q["torso"] = sin(t * 11.0) * 0.06
 	return q
@@ -237,24 +204,26 @@ static func target(p: SimPlayer, w: SimWorld, i: int, t: float) -> Dictionary:
 static func blend(cur: Dictionary, tgt: Dictionary, dt: float, fast: bool) -> void:
 	var k := 1.0 - exp(-dt * (38.0 if fast else 16.0))
 	for key in tgt:
-		cur[key] = lerpf(cur.get(key, tgt[key]), tgt[key], k)
+		if key == "face":
+			cur[key] = tgt[key]
+		else:
+			cur[key] = lerpf(cur.get(key, tgt[key]), tgt[key], k)
 
 
 ## Cizim: feet = ayak tabaninin dunya konumu, h = dunya biriminde boy, flip = sola bakiyor.
-static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: float, flip: bool,
+static func draw(ci: CanvasItem, char, q: Dictionary, feet: Vector2, h: float, flip: bool,
 		mod: Color = Color.WHITE, sq: Vector2 = Vector2.ONE, rot: float = 0.0) -> void:
-	var rig: String = CHAR_RIG[char]
-	var d: Dictionary = DEFS[rig]
+	var rig: String = char if char is String else CHAR_RIG[char]
+	var d := def(rig)
 	var pv: Dictionary = d["pivot"]
 	var jn: Dictionary = d["joint"]
 	var k: float = h / float(d["height"])
 	var base := Transform2D(rot, feet) * Transform2D(0.0, Vector2(k * sq.x * (-1.0 if flip else 1.0), k * sq.y), 0.0, Vector2.ZERO)
-	# kalca (kok) noktasi
-	var hip := base * Transform2D(q.get("body", 0.0), Vector2(q.get("dx", 0.0), -float(d["leg_len"]) + q.get("dy", 0.0)))
-	var torso := hip * Transform2D(q["torso"], jn["torso"])
-	var skirt := hip * Transform2D(q["torso"] * 0.4, jn["skirt"])
-	var hs: float = d.get("head_scale", 1.0)
-	var head := torso * Transform2D(q["head"], Vector2(hs, hs), 0.0, jn["head"])
+	var u: float = float(d["height"]) / 830.0   # poz ofsetleri 830 birimlik boya gore yazildi
+	var hip := base * Transform2D(q.get("body", 0.0), Vector2(q.get("dx", 0.0) * u, -float(d["leg_len"]) + q.get("dy", 0.0) * u))
+	var torso := hip * Transform2D(q["torso"], Vector2.ZERO)
+	var skirt := hip * Transform2D(q["torso"] * 0.4, jn.get("skirt", Vector2.ZERO))
+	var head := torso * Transform2D(q["head"], jn["head"])
 	var sh_f := torso * Transform2D(q["au_f"], jn["shoulder_f"])
 	var el_f := sh_f * Transform2D(q["al_f"], jn["elbow_f"])
 	var sh_b := torso * Transform2D(q["au_b"], jn["shoulder_b"])
@@ -264,21 +233,42 @@ static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: flo
 	var hp_b := skirt * Transform2D(q["lu_b"] - q["torso"] * 0.4, jn["hip_b"])
 	var kn_b := hp_b * Transform2D(q["ll_b"], jn["knee_b"])
 	var cape := torso * Transform2D(q["cape"], jn["cape"])
-	var bsc: float = d.get("back_scale", 1.0)
-	var sword := torso * Transform2D(float(d["sword_rot"]), Vector2(bsc, bsc), 0.0, jn["sword"])
-	var bitem: String = d.get("back_item", "sword")
-	var back := Color(mod.r * 0.78, mod.g * 0.74, mod.b * 0.74, mod.a)
-	var order := [
-		["cape", cape, back], [bitem, sword, mod],
-		["arm_up_b", sh_b, back], ["arm_lo_b", el_b, back],
-		["thigh_b", hp_b, back], ["boot_b", kn_b, back],
+	var bs: float = d["back_scale"]
+	var back := torso * Transform2D(float(d["back_rot"]), Vector2(bs, bs), 0.0, jn["back"])
+	var dark := Color(mod.r * 0.72, mod.g * 0.7, mod.b * 0.74, mod.a)
+	var bones := {"head": head, "torso": torso, "ua_f": sh_f, "fa_f": el_f, "back": back}
+	var face: int = int(q.get("face", 0))
+	var head_part: String = ["head", "head_happy", "head_hurt"][face]
+	if not pv.has(head_part):
+		head_part = "head"
+	var behind := []
+	var front := []
+	for ex: Dictionary in d["extras"]:
+		var par: Transform2D = bones.get(ex["parent"], torso)
+		var pp: String = {"head": head_part, "ua_f": "arm_up_f", "fa_f": "arm_lo_f"}.get(ex["parent"], ex["parent"])
+		var psz: Vector2 = d["size"].get(pp, Vector2.ZERO)
+		var pvp: Vector2 = pv.get(pp, Vector2.ZERO)
+		var at := Vector2(float(ex["at"][0]) * psz.x, float(ex["at"][1]) * psz.y) - pvp
+		var r: float = float(ex["rot"]) + (float(q["cape"]) * 0.7 if ex["layer"] == "back" else 0.0)
+		var it := [ex["part"], par * Transform2D(r, at), mod]
+		if ex["layer"] == "back":
+			behind.append(it)
+		else:
+			front.append(it)
+	var order := [["cape", cape, dark]]
+	order.append(["back", back, mod])
+	order.append_array(behind)
+	order.append_array([["arm_up_b", sh_b, dark], ["arm_lo_b", el_b, dark],
+		["thigh_b", hp_b, dark], ["boot_b", kn_b, dark],
 		["thigh_f", hp_f, mod], ["boot_f", kn_f, mod],
 		["torso", torso, mod], ["skirt", skirt, mod],
-		["head", head, mod],
-		["arm_up_f", sh_f, mod], ["arm_lo_f", el_f, mod],
-	]
+		[head_part, head, mod],
+		["arm_up_f", sh_f, mod], ["arm_lo_f", el_f, mod]])
+	order.append_array(front)
 	var cos: Dictionary = cosmetics.get(char, {})
 	for it: Array in order:
+		if not pv.has(it[0]):
+			continue
 		var tx := _t(rig, it[0])
 		if cos.has(it[0]) and tx != null:
 			var ck := "%s/%s/%s" % [rig, it[0], (cos[it[0]] as Color).to_html()]
@@ -288,5 +278,5 @@ static func draw(ci: CanvasItem, char: int, q: Dictionary, feet: Vector2, h: flo
 		if tx == null:
 			continue
 		ci.draw_set_transform_matrix(it[1])
-		ci.draw_texture(tx, -_pv(d, it[0]), it[2])
+		ci.draw_texture(tx, -pv[it[0]], it[2])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
