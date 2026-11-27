@@ -30,8 +30,8 @@ func _ready() -> void:
 
 
 func _new_pair() -> void:
-	var a := rng.randi_range(0, 5)
-	pair = [a, (a + 1 + rng.randi_range(0, 4)) % 6]
+	var a := rng.randi_range(0, K.CHARACTERS.size() - 1)
+	pair = [a, (a + 1 + rng.randi_range(0, K.CHARACTERS.size() - 2)) % K.CHARACTERS.size()]
 
 
 func tick(dt: float) -> void:
@@ -205,20 +205,12 @@ func _stage() -> void:
 	var ease := 1.0 - pow(1.0 - k, 3.0)
 	for side in 2:
 		var c: int = pair[side]
-		var img := R.pose(c, "idle")
-		if img == null:
-			continue
 		var h: float = 300.0 * K.CHARACTERS[c]["scale"]
-		var w: float = img.get_width() * h / img.get_height()
 		var d := -1.0 if side == 0 else 1.0
 		var x := cx + d * 118.0 + d * 260.0 * (1.0 - ease) + d * 260.0 * out
 		var bob := sin(t * 2.2 + side * 1.7) * 3.0
 		var al := clampf(minf(ease, 1.0 - out), 0.0, 1.0)
-		var ax := R.anchor(c, "idle", 0.5)
-		var rr := Rect2(x - w * ax, gy + bob - h, w, h)
-		if side == 1:
-			rr.position.x = x - w * (1.0 - ax)
-		R.draw_tex(self, img, rr, side == 1, Color(1, 1, 1, al))
+		Rig.draw(self, c, Rig.pose_named("idle", t + side), Vector2(x, gy + bob), h, side == 1, Color(1, 1, 1, al))
 		R.text(self, K.DISPLAY_NAMES[c], 22, Vector2(x, gy + 26), Color(1, 1, 1, al), 4)
 		if al > 0.8:
 			draw_line(Vector2(x - 36, gy + 44), Vector2(x + 36, gy + 44), P_COLORS[side], 3.0, true)

@@ -2,13 +2,13 @@
 ## Secilen karakter one cikar; maç ayarlari (zorluk, sure, stadyum, hava) ortada.
 extends UIScreen
 
-const PODIUMS := [147.0, 344.0, 541.0, 738.0, 936.0, 1133.0]
+const PODIUMS := [115.0, 265.0, 415.0, 565.0, 715.0, 865.0, 1015.0, 1165.0]
 const STAT_LABELS := ["HIZ", "ZIPLAMA", "ŞUT"]
 const STAT_ICONS := ["st_speed.png", "st_jump.png", "st_shot.png"]
 
 var pick := [0, 3]
 var step := 0
-var focus_k := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+var focus_k := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 var anim := [[-1, 0.0], [-1, 0.0]]
 var roll := 0.0
 var roll_tick := 0.0
@@ -25,7 +25,7 @@ func _ready() -> void:
 	rng.randomize()
 	pick = Game.chars.duplicate()
 	if pick[0] == pick[1]:
-		pick[1] = (pick[0] + 3) % 6
+		pick[1] = (pick[0] + 3) % K.CHARACTERS.size()
 	online = Game.mode in ["host", "client"]
 	cupm = Game.mode == "cup"
 	if online:
@@ -92,7 +92,7 @@ func _maybe_start() -> void:
 
 
 func tick(dt: float) -> void:
-	for i in 6:
+	for i in K.CHARACTERS.size():
 		var tgt := 1.0 if (pick[0] == i or pick[1] == i) else 0.0
 		focus_k[i] += (tgt - focus_k[i]) * minf(1.0, dt * 10.0)
 	for w in 2:
@@ -104,7 +104,7 @@ func tick(dt: float) -> void:
 		roll_tick -= dt
 		if roll_tick <= 0.0:
 			roll_tick = 0.06 + (0.75 - roll) * 0.12
-			pick[step] = (pick[step] + 1 + rng.randi_range(0, 4)) % 6
+			pick[step] = (pick[step] + 1 + rng.randi_range(0, K.CHARACTERS.size() - 2)) % K.CHARACTERS.size()
 			play("click")
 			if online:
 				_send_pick()
@@ -166,13 +166,13 @@ func on_key(kc: int) -> void:
 	match kc:
 		KEY_LEFT, KEY_A:
 			if not (online and rdy[me]):
-				pick[step] = (pick[step] + 5) % 6
+				pick[step] = (pick[step] + K.CHARACTERS.size() - 1) % K.CHARACTERS.size()
 				play("click")
 				if online:
 					_send_pick()
 		KEY_RIGHT, KEY_D:
 			if not (online and rdy[me]):
-				pick[step] = (pick[step] + 1) % 6
+				pick[step] = (pick[step] + 1) % K.CHARACTERS.size()
 				play("click")
 				if online:
 					_send_pick()
@@ -225,7 +225,7 @@ func _next() -> void:
 	if step == 0:
 		step = 1
 		if pick[1] == pick[0]:
-			pick[1] = (pick[0] + 3) % 6
+			pick[1] = (pick[0] + 3) % K.CHARACTERS.size()
 	else:
 		Game.chars = pick.duplicate()
 		Game.start_match()
@@ -345,14 +345,14 @@ func _chips() -> void:
 
 
 func _heroes() -> void:
-	var order := [0, 1, 2, 3, 4, 5]
+	var order := range(K.CHARACTERS.size())
 	order.sort_custom(func(a, b): return focus_k[a] < focus_k[b])
 	for i: int in order:
 		var cx: float = PODIUMS[i]
 		var sel0: bool = pick[0] == i
 		var sel1: bool = pick[1] == i and (step == 1 or online)
 		var f: float = focus_k[i]
-		reg("hero%d" % i, Rect2(cx - 90, 340, 180, 330))
+		reg("hero%d" % i, Rect2(cx - 72, 340, 144, 330))
 		var cur: bool = pick[step] == i
 		if sel0 or sel1:
 			var col: Color = P_COLORS[0] if (sel0 and (step == 0 or not sel1)) else P_COLORS[1]
@@ -362,19 +362,16 @@ func _heroes() -> void:
 			draw_set_transform(Vector2(cx, 607), 0.0, Vector2(1.0, 0.15))
 			draw_arc(Vector2.ZERO, 92, 0, TAU, 64, col, 5.0 / 0.15 * 0.2, true)
 			draw_set_transform(Vector2.ZERO)
-		var img := R.tex("sel_hero%d.png" % i)
 		var sc := 0.9 + 0.22 * f
 		var hh: float = 236.0 * K.CHARACTERS[i]["scale"] * sc
-		var ww := img.get_width() * hh / img.get_height() if img else 0.0
 		var bob := sin(t * 3.0 + i) * 2.0 if (sel0 or sel1) else 0.0
 		if step == 1 and sel0 and not sel1:
 			bob = absf(sin(t * 8.0 + i)) * 6.0   # hazir: hoplar
 		var foot := 602.0 + 14.0 * f
 		var al := 0.55 + 0.45 * f
-		if img:
-			# rakip sagda: ona bakacak sekilde aynala
-			R.draw_tex(self, img, Rect2(cx - ww / 2.0, foot - bob - hh, ww, hh), sel1 and not sel0, Color(al, al, al + 0.04, 1.0))
-		R.text(self, K.DISPLAY_NAMES[i], int(19 + 5 * f), Vector2(cx, 632 + 4 * f), GOLD if (sel0 or sel1) else Color8(200, 205, 220), 3)
+		# rakip sagda: ona bakacak sekilde aynala
+		Rig.draw(self, i, Rig.pose_named("idle", t + i * 0.7), Vector2(cx, foot - bob), hh, sel1 and not sel0, Color(al, al, al + 0.04, 1.0))
+		R.text(self, K.DISPLAY_NAMES[i], int(14 + 4 * f), Vector2(cx, 632 + 4 * f), GOLD if (sel0 or sel1) else Color8(200, 205, 220), 3)
 		var tags := []
 		if sel0:
 			tags.append([0, "SEN" if me == 0 else "RAKİP"])

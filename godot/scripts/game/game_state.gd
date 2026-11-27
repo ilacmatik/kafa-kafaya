@@ -104,7 +104,7 @@ func load_settings() -> void:
 				opt[k] = o[k] if not opt[k] is int else int(o[k])
 	var c = d.get("chars", chars)
 	if c is Array and c.size() == 2:
-		chars = [clampi(int(c[0]), 0, 5), clampi(int(c[1]), 0, 5)]
+		chars = [clampi(int(c[0]), 0, K.CHARACTERS.size() - 1), clampi(int(c[1]), 0, K.CHARACTERS.size() - 1)]
 
 
 func save_settings() -> void:
@@ -184,7 +184,7 @@ func add_result(res: int, goals: int, bonus_coins: int = 0) -> Dictionary:
 # ---------------------------------------------------------------- kupa
 func new_cup(char: int) -> void:
 	var pool := []
-	for i in 6:
+	for i in K.CHARACTERS.size():
 		if i != char:
 			pool.append(i)
 	pool.shuffle()

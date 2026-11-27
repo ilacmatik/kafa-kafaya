@@ -61,11 +61,7 @@ func paint() -> void:
 		draw_texture_rect(pod, Rect2(LW / 2.0 - pw / 2.0, 712 - ph, pw, ph), false)
 		base_y = 712 - ph + ph * 0.12
 	var hop := absf(sin(t * 6.0)) * 14.0
-	var hero := R.pose(ch, "celeb")
-	if hero:
-		var hh := 230.0
-		var hw := hero.get_width() * hh / hero.get_height()
-		draw_texture_rect(hero, Rect2(LW / 2.0 - hw / 2.0, base_y - hop - hh, hw, hh), false)
+	Rig.draw(self, ch, Rig.pose_named("celeb", t), Vector2(LW / 2.0, base_y - hop), 230.0, false)
 	var cup := R.tex("cup_gold.png")
 	if cup:
 		R.glow(self, Vector2(LW / 2.0 + 150, 380), 150, Color(1, 0.8, 0.3, 0.45))

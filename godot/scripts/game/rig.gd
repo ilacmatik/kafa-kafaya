@@ -8,8 +8,6 @@ extends RefCounted
 const HEROES := ["flame_knight", "frost_knight", "stone_guardian", "blade_master",
 	"storm_shaman", "spirit_shaman", "shadow_ninja", "forest_archer"]
 ## Gecis: eski futbolcu numaralari -> kahraman (karakter secimi 8'e cikana kadar)
-const CHAR_RIG := {0: "flame_knight", 1: "blade_master", 2: "stone_guardian", 3: "frost_knight",
-	4: "shadow_ninja", 5: "storm_shaman"}
 static var _defs := {}
 
 
@@ -18,7 +16,8 @@ static func def(rig: String) -> Dictionary:
 		var d = JSON.parse_string(FileAccess.get_file_as_string("res://assets/rig/%s/rig.json" % rig))
 		var o := {"pivot": {}, "joint": {}, "extras": d["extras"], "leg_len": float(d["leg_len"]),
 			"height": float(d["height"]), "back_rot": float(d.get("back_rot", -0.55)), "back_scale": float(d.get("back_scale", 1.0)),
-			"thigh_w": float(d.get("thigh_w", 1.0)), "boot_w": float(d.get("boot_w", 1.0)), "size": {}}
+			"thigh_w": float(d.get("thigh_w", 1.0)), "boot_w": float(d.get("boot_w", 1.0)), "size": {},
+			"head_s": float(d.get("head_s", 1.0)), "head_c": Vector2(d["head_c"][0], d["head_c"][1])}
 		for k in d["pivot"]:
 			o["pivot"][k] = Vector2(d["pivot"][k][0], d["pivot"][k][1])
 			o["size"][k] = Vector2(d["size"][k][0], d["size"][k][1])
@@ -71,7 +70,11 @@ static func _recolor(src: Texture2D, col: Color) -> Texture2D:
 
 
 static func has(char: int) -> bool:
-	return CHAR_RIG.has(char)
+	return char >= 0 and char < K.CHARACTERS.size()
+
+
+static func rig_of(char: int) -> String:
+	return K.CHARACTERS[char]["rig"]
 
 
 static func _t(rig: String, part: String) -> Texture2D:
@@ -79,6 +82,33 @@ static func _t(rig: String, part: String) -> Texture2D:
 	if not _tex.has(key):
 		_tex[key] = R.tex("rig/%s/%s.png" % [rig, part])
 	return _tex[key]
+
+
+## Menu/vitrin pozu: "idle" ya da "celeb" (t ile hafif canli)
+static func pose_named(name: String, t: float) -> Dictionary:
+	var q := rest()
+	var b := sin(t * 2.4)
+	q["torso"] += 0.02 * b
+	q["au_f"] += 0.04 * b
+	q["au_b"] -= 0.04 * b
+	if name == "celeb":
+		var pump := sin(t * 9.0)
+		q["au_f"] = -3.5 + 0.15 * pump
+		q["al_f"] = 0.2
+		q["au_b"] = -2.75 - 0.15 * pump
+		q["al_b"] = -0.3
+		q["head"] = -0.12
+		q["face"] = 1
+	q["plant"] = 1.0
+	return q
+
+
+## Carpisma kafasinin merkezi zeminden hc yukseklikteyse cizim boyu ne olmali (gorsel kafa = fizik kafa).
+static func fit_h(rig: String, hc: float) -> float:
+	var d := def(rig)
+	var pv: Vector2 = d["pivot"]["head"]
+	var hc_rig: float = float(d["leg_len"]) - d["joint"]["head"].y + (pv.y - d["head_c"].y) * float(d["head_s"])
+	return hc * float(d["height"]) / hc_rig
 
 
 ## Ham poz (aci = radyan, saat yonu +; sarkan uzuv icin - = one dogru)
@@ -220,7 +250,7 @@ static func blend(cur: Dictionary, tgt: Dictionary, dt: float, fast: bool) -> vo
 ## Cizim: feet = ayak tabaninin dunya konumu, h = dunya biriminde boy, flip = sola bakiyor.
 static func draw(ci: CanvasItem, char, q: Dictionary, feet: Vector2, h: float, flip: bool,
 		mod: Color = Color.WHITE, sq: Vector2 = Vector2.ONE, rot: float = 0.0) -> void:
-	var rig: String = char if char is String else CHAR_RIG[char]
+	var rig: String = char if char is String else rig_of(char)
 	var d := def(rig)
 	var pv: Dictionary = d["pivot"]
 	var jn: Dictionary = d["joint"]
@@ -241,7 +271,8 @@ static func draw(ci: CanvasItem, char, q: Dictionary, feet: Vector2, h: float, f
 	var hip := base * Transform2D(q.get("body", 0.0), Vector2(q.get("dx", 0.0) * u, hy))
 	var torso := hip * Transform2D(q["torso"], Vector2.ZERO)
 	var skirt := hip * Transform2D(q["torso"] * 0.4, jn.get("skirt", Vector2.ZERO))
-	var head := torso * Transform2D(q["head"], jn["head"])
+	var hs: float = d["head_s"]
+	var head := torso * Transform2D(q["head"], Vector2(hs, hs), 0.0, jn["head"])
 	var sh_f := torso * Transform2D(q["au_f"], jn["shoulder_f"])
 	var el_f := sh_f * Transform2D(q["al_f"], jn["elbow_f"])
 	var sh_b := torso * Transform2D(q["au_b"], jn["shoulder_b"])

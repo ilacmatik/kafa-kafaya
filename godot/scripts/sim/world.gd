@@ -398,15 +398,15 @@ func _flick(p: SimPlayer) -> void:
 func goal_rects() -> Array:
 	var r := K.ROOF_T / 2.0
 	return [
-		[0.0, K.GOAL_TOP - K.ROOF_T, K.GOAL_D + 20.0 - r, K.GOAL_TOP],
-		[K.W - K.GOAL_D - 20.0 + r, K.GOAL_TOP - K.ROOF_T, K.W, K.GOAL_TOP],
+		[0.0, K.GOAL_TOP - K.ROOF_T, K.GOAL_D + K.POST_X - r, K.GOAL_TOP],
+		[K.W - K.GOAL_D - K.POST_X + r, K.GOAL_TOP - K.ROOF_T, K.W, K.GOAL_TOP],
 	]
 
 
 func post_tips() -> Array:
 	var r := K.ROOF_T / 2.0 + 1.0
 	var y := K.GOAL_TOP - K.ROOF_T / 2.0
-	return [Vector3(K.GOAL_D + 20.0 - r, y, r), Vector3(K.W - K.GOAL_D - 20.0 + r, y, r)]
+	return [Vector3(K.GOAL_D + K.POST_X - r, y, r), Vector3(K.W - K.GOAL_D - K.POST_X + r, y, r)]
 
 
 # ------------------------------------------------------------ adim
@@ -511,6 +511,10 @@ func _step_players(dt: float) -> void:
 	for p: SimPlayer in players:
 		var prev_y: float = p.y
 		var prev_top: float = p.y - p.h
+		# kafa-kiris kurali: hangi itki olursa olsun (ziplama, omuz, ates carpmasi) kafanin tepesi
+		# kirise top capi + 2'den fazla yaklasamaz -> top her zaman ustten gecebilir. (ziplama gucu ve kirisin ustu haric)
+		if p.vy < 0.0 and p.jump_t <= 0.0 and p.y > K.GOAL_TOP - K.ROOF_T + 1.0:
+			p.vy = maxf(p.vy, -K.jump_cap_from(p.y - p.h))
 		p.vy += K.PLAYER_G * dt
 		p.x += p.vx * dt
 		p.y += p.vy * dt

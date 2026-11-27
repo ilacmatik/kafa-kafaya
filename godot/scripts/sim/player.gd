@@ -99,7 +99,8 @@ func reset() -> void:
 
 
 func jump_cap() -> float:
-	return K.jump_cap_h(h)
+	# o anki yukseklikten (ikinci ziplama dahil) kafa kirise top capi kadar yaklasabilir, fazlasi degil
+	return K.jump_cap_from(y - h)
 
 
 # carpisma daireleri: Vector3(x, y, r)

@@ -8,12 +8,15 @@ const TEAM := {
 	"yellow": [Color8(252, 205, 45), Color8(45, 45, 55), Color8(235, 165, 25)],
 	"green": [Color8(70, 175, 70), Color8(250, 250, 250), Color8(35, 120, 50)],
 	"white": [Color8(245, 245, 248), Color8(60, 165, 75), Color8(225, 228, 232)],
-	"k0": [Color8(225, 55, 55), Color8(250, 250, 250), Color8(180, 30, 35)],
-	"k1": [Color8(50, 105, 220), Color8(245, 245, 252), Color8(30, 65, 160)],
-	"k2": [Color8(140, 146, 158), Color8(250, 210, 50), Color8(100, 106, 118)],
-	"k3": [Color8(246, 246, 250), Color8(235, 195, 60), Color8(215, 220, 228)],
-	"k4": [Color8(252, 205, 45), Color8(40, 40, 50), Color8(235, 165, 25)],
-	"k5": [Color8(40, 140, 60), Color8(250, 250, 250), Color8(25, 95, 40)],
+	# kahraman renkleri (forma, ikinci renk, koyu ton)
+	"k0": [Color8(225, 70, 35), Color8(255, 200, 60), Color8(170, 40, 25)],     # Alev
+	"k1": [Color8(95, 180, 235), Color8(245, 250, 255), Color8(45, 110, 175)],   # Buz
+	"k2": [Color8(140, 146, 158), Color8(190, 140, 80), Color8(95, 100, 112)],   # Kaya
+	"k3": [Color8(40, 60, 120), Color8(220, 45, 45), Color8(25, 38, 85)],        # Kilic
+	"k4": [Color8(120, 60, 170), Color8(60, 200, 190), Color8(80, 35, 120)],     # Ejder
+	"k5": [Color8(50, 160, 90), Color8(240, 200, 80), Color8(30, 110, 60)],      # Ruh
+	"k6": [Color8(55, 45, 75), Color8(210, 40, 50), Color8(35, 28, 50)],         # Golge
+	"k7": [Color8(90, 130, 55), Color8(160, 110, 60), Color8(60, 90, 35)],       # Okcu
 }
 const OUTC := Color8(30, 24, 30)
 

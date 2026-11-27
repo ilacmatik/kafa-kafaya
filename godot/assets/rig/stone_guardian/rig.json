@@ -178,6 +178,11 @@
  "back_rot": 0.0,
  "back_scale": 0.8,
  "height": 1517.1,
+ "head_c": [
+  186.5,
+  219.5
+ ],
+ "head_s": 1.3,
  "thigh_w": 1.15,
  "boot_w": 1.15
 }

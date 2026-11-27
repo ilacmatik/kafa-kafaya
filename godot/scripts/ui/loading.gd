@@ -16,17 +16,17 @@ func _ready() -> void:
 	var names := ["m2_bg.jpg", "sel_bg.jpg", "vs_bg.jpg", "vs_emblem.png", "stadium_night_clean.jpg",
 		"stadium_timsah_clean.jpg", "stadium_timsah_rain_clean.jpg", "stadium_timsah_snow_clean.jpg",
 		"crowd_atlas.png", "crowd_tint.png", "crowd_mask_night.png", "crowd_mask_timsah.png",
-		"goal_art.png", "goal_post.png", "logo.png"]
-	for i in 6:
-		names.append("sel_hero%d.png" % i)
-		for p in R.POSES:
-			names.append("p%d_%s.png" % [i, p])
+		"goal_wood.png", "goal_wood_post.png", "logo.png"]
+	for c in K.CHARACTERS:
+		var rig: String = c["rig"]
+		for part in Rig.def(rig)["pivot"]:
+			names.append("rig/%s/%s.png" % [rig, part])
 	for n in names:
 		var path: String = "res://assets/" + n
 		if ResourceLoader.exists(path):
 			queue.append(path)
 			ResourceLoader.load_threaded_request(path, "", true)
-	total = queue.size() + 6
+	total = queue.size() + K.CHARACTERS.size()
 
 
 func tick(dt: float) -> void:
@@ -43,7 +43,7 @@ func tick(dt: float) -> void:
 			i += 1
 	# dokular bitince portreleri kare kare uret (takilma olmasin)
 	if queue.is_empty() and done < total:
-		var c := done - (total - 6)
+		var c := done - (total - K.CHARACTERS.size())
 		R.portrait_pop(c, 192)
 		done += 1
 	var target := float(done) / float(total)

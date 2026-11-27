@@ -82,6 +82,8 @@ func _ready() -> void:
 	world = SimWorld.new(Game.chars[0], Game.chars[1], Game.m_duration(), Game.weather_now, true)
 	world.phase_t += intro
 	bot = SimBot.new(1, Game.m_level())
+	if OS.get_environment("KAFA_DEMO") == "1":
+		bot0 = SimBot.new(0, 2)   # test/video: iki taraf da bilgisayar
 	field.m = self
 	var pl := CanvasLayer.new()
 	pl.layer = 1
@@ -374,6 +376,9 @@ func _held() -> Dictionary:
 
 
 # ---------------------------------------------------------------- dongu
+var bot0: SimBot = null
+
+
 func _physics_process(dt: float) -> void:
 	if online:
 		_net_physics(dt)
@@ -389,7 +394,11 @@ func _physics_process(dt: float) -> void:
 		lob_until = t + 0.25
 	if t < lob_until:
 		h["d"] = true
-	world.apply_input(me, h["l"], h["r"], h["j"], press["k"], press["s"], h["k"], press["o"], h["d"], dt)
+	if bot0 != null:
+		var a0 := bot0.think(world, dt)
+		world.apply_input(0, a0[0], a0[1], a0[2], a0[3], a0[4], null, bot0.shoulder, false, dt)
+	else:
+		world.apply_input(me, h["l"], h["r"], h["j"], press["k"], press["s"], h["k"], press["o"], h["d"], dt)
 	for k in press:
 		press[k] = false
 	var a := bot.think(world, dt)
@@ -782,15 +791,12 @@ func _draw_intro(ci: CanvasItem, vp: Vector2) -> void:
 	var tags := ["SEN", "BİLGİSAYAR"] if mode in ["bot", "cup"] else ["SEN", "RAKİP"]
 	for side in 2:
 		var c: int = world.players[side].char
-		var tex := R.pose(c, "idle")
 		var hh := 300.0 * s
-		var ww := tex.get_width() * hh / tex.get_height()
 		var d := -1.0 if side == 0 else 1.0
 		var x := vp.x / 2.0 + d * 330.0 * s + d * 520.0 * s * (1.0 - ease)
 		var bob := sin(t * 3.0 + side) * 3.0 * s
 		R.glow(ci, Vector2(x, 440 * s), 200 * s, Color(0.16, 0.27, 0.55, 0.6) if side == 0 else Color(0.55, 0.16, 0.16, 0.6))
-		var rr := Rect2(x - ww / 2.0, 560 * s + bob - hh, ww, hh)
-		R.draw_tex(ci, tex, rr, side == 1)
+		Rig.draw(ci, c, Rig.pose_named("idle", t + side), Vector2(x, 560 * s + bob), hh, side == 1)
 		var plate := Rect2(x - 150 * s, 573 * s, 300 * s, 54 * s)
 		R.panel(ci, plate, Color8(14, 18, 40), 20 * s, P_COLORS[side], 3 * s)
 		R.text(ci, K.DISPLAY_NAMES[c], int(30 * s), plate.get_center(), Color.WHITE, int(3 * s))

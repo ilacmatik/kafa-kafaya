@@ -51,21 +51,28 @@ static func anchor(char: int, key: String, default_v: float) -> float:
 	return float(_anchors.get("p%d_%s" % [char, key], default_v))
 
 
+## Kahramanin rig kafasi: yuzu ortalayan kare (ust: sac payi, alt: cene + biraz boyun)
+static func _head_square(char: int) -> Image:
+	var rig: String = K.CHARACTERS[char]["rig"]
+	var img: Image = tex("rig/%s/head.png" % rig).get_image()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var c: Vector2 = Rig.def(rig)["head_c"]
+	var side := int(maxf(img.get_width(), img.get_height() * 0.8) * 1.04)
+	var out := Image.create(side, side, false, Image.FORMAT_RGBA8)
+	var ox := int(side / 2.0 - c.x)
+	var oy := int(side * 0.54 - c.y)
+	out.blend_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i(ox, oy))
+	return out
+
+
 ## Karakterin kafasindan yuvarlak portre (bir kez uretilir).
 static func portrait(char: int, size: int = 128) -> Texture2D:
 	var key := "%d:%d" % [char, size]
 	if _portraits.has(key):
 		return _portraits[key]
-	var src: Texture2D = pose(char, "idle")
-	var img := src.get_image()
-	if img.is_compressed():
-		img.decompress()
-	img.convert(Image.FORMAT_RGBA8)
-	var w := img.get_width()
-	var hx := anchor(char, "idle", 0.5) * w
-	var side := int(w * 0.92)
-	var rx := clampi(int(hx - side / 2.0), 0, max(0, w - side))
-	var head := img.get_region(Rect2i(rx, 0, min(side, w), min(side, img.get_height())))
+	var head := _head_square(char)
 	head.resize(size, size, Image.INTERPOLATE_LANCZOS)
 	var c := size / 2.0
 	for yy in size:
@@ -86,16 +93,7 @@ static func portrait_pop(char: int, size: int = 192) -> Texture2D:
 	var key := "pop%d:%d" % [char, size]
 	if _portraits.has(key):
 		return _portraits[key]
-	var src: Texture2D = pose(char, "idle")
-	var img := src.get_image()
-	if img.is_compressed():
-		img.decompress()
-	img.convert(Image.FORMAT_RGBA8)
-	var w := img.get_width()
-	var hx := anchor(char, "idle", 0.5) * w
-	var side := int(w * 0.92)
-	var rx := clampi(int(hx - side / 2.0), 0, max(0, w - side))
-	var head := img.get_region(Rect2i(rx, 0, min(side, w), min(side, img.get_height())))
+	var head := _head_square(char)
 	var cx := size / 2.0
 	var cy := size * 0.6
 	var rc := size * 0.35

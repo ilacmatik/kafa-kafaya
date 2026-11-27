@@ -20,7 +20,11 @@ const P_COLORS := [Color8(70, 160, 255), Color8(255, 85, 85)]
 
 var goal_back: Texture2D
 var goal_front: Texture2D
-var gsx := 0.29
+# ahsap kale gorseli (goal_wood.png 1650x1122): on direk sol kenari x=1405, kiris alti y=215, direk tabani y=1105
+const GW_POST := 1405.0
+const GW_BAR := 215.0
+const GW_FOOT := 1105.0
+var gsx := 0.21
 var gsy := 1.0
 var bg_node := Node2D.new()
 var crowd: Crowd
@@ -28,9 +32,9 @@ var weather: Node2D
 
 
 func _ready() -> void:
-	goal_back = R.tex("goal_art.png")
-	goal_front = R.tex("goal_post.png")
-	gsy = (K.GROUND - K.GOAL_TOP) / (598.0 - 104.0)
+	goal_back = R.tex("goal_wood.png")
+	goal_front = R.tex("goal_wood_post.png")
+	gsy = (K.GROUND - K.GOAL_TOP) / (GW_FOOT - GW_BAR)
 	add_layer = Node2D.new()
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
@@ -150,14 +154,14 @@ func _draw_boards(w: SimWorld) -> void:
 
 func _goal_rect(side: int, tex: Texture2D, left_x: float) -> Rect2:
 	var sz := Vector2(tex.get_width() * gsx, tex.get_height() * gsy)
-	var gy := K.GOAL_TOP - 104.0 * gsy
+	var gy := K.GOAL_TOP - GW_BAR * gsy
 	if side == 0:
 		return Rect2(left_x, gy, sz.x, sz.y)
 	return Rect2(K.W - left_x - sz.x, gy, sz.x, sz.y)
 
 
 func _draw_goal_back(w: SimWorld) -> void:
-	var gx := K.GOAL_D - 660.0 * gsx
+	var gx := K.GOAL_D - 4.0 - GW_POST * gsx
 	for side in 2:
 		var off := 0.0
 		var rp = m.ripple
@@ -190,10 +194,13 @@ func _draw_goal_front(w: SimWorld, t: float) -> void:
 			var bob := sin(t * 4.0) * 4.0
 			var rr := Rect2(x - ww / 2.0, K.GROUND + 4.0 + bob - hh, ww, hh)
 			R.draw_tex(self, img, rr, i == 1)
-	var px := K.GOAL_D + (648.0 - 660.0) * gsx
+	# on direk oyuncu/topun onunde; top arkasindayken yari saydam olur (top kaybolmaz)
+	var px := K.GOAL_D - 4.0 - 10.0 * gsx
 	for side in 2:
 		var r := _goal_rect(side, goal_front, px)
-		R.draw_tex(self, goal_front, r, side == 1)
+		var b := w.ball
+		var behind := b.x + K.BALL_R > r.position.x and b.x - K.BALL_R < r.end.x and b.y > K.GOAL_TOP - K.ROOF_T
+		R.draw_tex(self, goal_front, r, side == 1, Color(1, 1, 1, 0.55 if behind else 1.0))
 
 
 func _draw_pu(pu: Array, t: float) -> void:
@@ -277,11 +284,13 @@ func _kick_swoosh(p: SimPlayer, h: float) -> void:
 
 func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 	var pr := _player_pose(p, w, i)
-	var tex := R.pose(p.char, pr[0])
 	var pose: String = pr[1]
 	var akey: String = pr[2]
-	var idle := R.pose(p.char, "idle")
-	var f: float = K.BASE_H * p.stats["scale"] / idle.get_height()
+	var tex: Texture2D = null
+	var f := 1.0
+	if not Rig.has(p.char):
+		tex = R.pose(p.char, pr[0])
+		f = K.BASE_H * p.stats["scale"] / R.pose(p.char, "idle").get_height()
 	var h: float = K.BASE_H * p.stats["scale"]
 	var flip := p.face < 0
 	var tilt := 0.0
@@ -326,7 +335,9 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 		Rig.blend(ps["rig"], tq, last_dt, p.kick_t > 0.0 or p.bike_t > 0.0)
 		var modr := Color(0.7, 0.88, 1.0) if p.frozen > 0.0 else Color.WHITE
 		var rrot := deg_to_rad(tilt * (1.0 if not flip else -1.0)) * 0.5 if (p.stun > 0.0 or pose == "slide") else 0.0
-		Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), h * 1.2, flip, modr, Vector2(sx, sy), rrot)
+		# cizim boyu: gorsel kafa merkezi = fizik kafa merkezi
+		var hc: float = p.h0 - p.head_r - 4.0 * K.SIZE
+		Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), Rig.fit_h(Rig.rig_of(p.char), hc), flip, modr, Vector2(sx, sy), rrot)
 	else:
 		var size: Vector2 = Vector2(tex.get_width(), tex.get_height()) * f * Vector2(sx, sy)
 		var ax := R.anchor(p.char, akey, 0.40 if pose == "kick" else 0.5)
