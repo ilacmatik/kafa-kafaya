@@ -1,0 +1,105 @@
+name: Godot Derleme
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VER: "4.7.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: godot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Godot ve sablonlar
+        run: |
+          set -e
+          B=https://github.com/godotengine/godot-builds/releases/download/${GODOT_VER}-stable
+          curl -sSL -o /tmp/g.zip $B/Godot_v${GODOT_VER}-stable_linux.x86_64.zip
+          curl -sSL -o /tmp/t.tpz $B/Godot_v${GODOT_VER}-stable_export_templates.tpz
+          unzip -q /tmp/g.zip -d /tmp/godot
+          sudo mv /tmp/godot/Godot_v${GODOT_VER}-stable_linux.x86_64 /usr/local/bin/godot
+          T=~/.local/share/godot/export_templates/${GODOT_VER}.stable
+          mkdir -p $T && unzip -q /tmp/t.tpz -d /tmp/tpl && mv /tmp/tpl/templates/* $T/
+          ls $T
+
+      - name: Imza anahtari (Python surumuyle ayni)
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kafakafaya-imza-v1
+      - name: Anahtar yoksa olustur
+        run: |
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 2048 -validity 20000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Editor ayarlari (Android SDK / Java)
+        run: |
+          timeout 120 godot --headless --editor --quit || true
+          F=$(ls ~/.config/godot/editor_settings-*.tres | head -1)
+          echo "ayar: $F"
+          cat >> "$F" <<EOS
+          export/android/android_sdk_path = "$ANDROID_SDK_ROOT"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOS
+          sed -i 's/^ *export\//export\//' "$F"
+
+      - name: Surum kodu
+        run: |
+          sed -i "s/^version\/code=.*/version\/code=$((2000 + ${{ github.run_number }}))/" export_presets.cfg
+          sed -i "s/^version\/name=.*/version\/name=\"2.${{ github.run_number }}\"/" export_presets.cfg
+          grep version/ export_presets.cfg
+
+      - name: Ice aktar + Android sablonu (120 Hz yamasi)
+        run: |
+          timeout 300 godot --headless --import || true
+          T=~/.local/share/godot/export_templates/${GODOT_VER}.stable
+          mkdir -p android/build
+          unzip -q -o $T/android_source.zip -d android/build
+          echo "${GODOT_VER}.stable" > android/.build_version
+          touch android/build/.gdignore
+          python3 ../.github/scripts/android_120hz.py android/build
+
+      - name: Testler (fizik)
+        run: timeout 300 godot --headless --path . --script tests/sim_test.gd || echo "test uyarisi"
+
+      - name: Disa aktar
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: /home/runner/.android/debug.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: android
+        run: |
+          mkdir -p ../export
+          godot --headless --export-release "Android" ../export/KafaKafaya_Godot.apk
+          godot --headless --export-release "Windows" ../export/KafaKafaya_Godot.exe
+          ls -la ../export
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kafakafaya-godot
+          path: export/*
+
+      - name: Surum yayinla
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create godot-${{ github.run_number }} ../export/KafaKafaya_Godot.apk ../export/KafaKafaya_Godot.exe \
+            --title "Godot surum ${{ github.run_number }}" --notes "Godot 4.7 ilk surum (APK + EXE)."
