@@ -1,0 +1,39 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/match.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/game/field_view.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/game/hud.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/game/touch_controls.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/game/sfx.gd" id="5"]
+
+[node name="Match" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Field" type="Node2D" parent="."]
+script = ExtResource("2")
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="HUD" type="Node2D" parent="HUDLayer"]
+script = ExtResource("3")
+
+[node name="TouchLayer" type="CanvasLayer" parent="."]
+layer = 3
+
+[node name="Touch" type="Control" parent="TouchLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("4")
+
+[node name="OverLayer" type="CanvasLayer" parent="."]
+layer = 4
+
+[node name="Overlay" type="Node2D" parent="OverLayer"]
+
+[node name="Sfx" type="Node" parent="."]
+script = ExtResource("5")
