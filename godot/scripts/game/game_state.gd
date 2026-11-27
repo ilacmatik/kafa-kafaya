@@ -14,6 +14,7 @@ var duration := 90.0
 var weather := "clear"      # secilen (random olabilir)
 var weather_now := "clear"  # macta kullanilan
 var stadium := 0
+var opt := {"sfx": true, "crowd": true, "vib": true, "fps": 0}   # fps 0: ekranin en yuksegi
 var cache: Array = []       # yukleme ekraninda onceden yuklenen kaynaklar bellekte kalsin
 
 # --- profil (ilerleme, altin) - ileride kozmetik magazasi bunu kullanacak
@@ -48,6 +49,7 @@ func _ready() -> void:
 	_layer.add_child(_fade)
 	load_settings()
 	load_profile()
+	apply_opts()
 
 
 ## Karartarak sahne degistir.
@@ -95,6 +97,11 @@ func load_settings() -> void:
 		ok = ok or w[0] == weather
 	if not ok:
 		weather = "clear"
+	var o = d.get("opt", {})
+	if o is Dictionary:
+		for k in opt:
+			if o.has(k):
+				opt[k] = o[k] if not opt[k] is int else int(o[k])
 	var c = d.get("chars", chars)
 	if c is Array and c.size() == 2:
 		chars = [clampi(int(c[0]), 0, 5), clampi(int(c[1]), 0, 5)]
@@ -104,7 +111,16 @@ func save_settings() -> void:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"level": level, "duration": duration, "stadium": stadium,
-			"weather": weather, "chars": chars}))
+			"weather": weather, "chars": chars, "opt": opt}))
+
+
+func apply_opts() -> void:
+	Engine.max_fps = int(opt["fps"])
+
+
+func vibrate(ms: int) -> void:
+	if opt["vib"] and OS.has_feature("mobile"):
+		Input.vibrate_handheld(ms)
 
 
 func weather_name(w: String) -> String:

@@ -95,6 +95,8 @@ func say(msg: String, dur: float = 1.8) -> void:
 
 
 func play(name: String) -> void:
+	if not Game.opt["sfx"]:
+		return
 	var st := load("res://assets/sfx/%s.wav" % name) if ResourceLoader.exists("res://assets/sfx/%s.wav" % name) else null
 	if st:
 		sfx.stream = st

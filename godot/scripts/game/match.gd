@@ -517,6 +517,7 @@ func _process_events(ev: Array) -> void:
 				sfx.play("swing", -10.0)
 			"post":
 				sfx.play("post")
+				Game.vibrate(40)
 				_say("DİREK!", Color.WHITE, b.x, b.y - 60.0, 1.0)
 				field.crowd.kick(0.5)
 			"doksan_out":
@@ -543,6 +544,7 @@ func _process_events(ev: Array) -> void:
 				sfx.play("armed")
 			"super_fire", "super_ice":
 				sfx.play(name)
+				Game.vibrate(70)
 				shake = maxf(shake, 0.25)
 				field.crowd.kick(0.8)
 			"fire_hit":
@@ -606,6 +608,7 @@ func _on_goal(pe: PackedStringArray) -> void:
 	var own := int(pe[4]) == 1
 	sfx.play("goal")
 	sfx.play("cheer", -2.0)
+	Game.vibrate(180 if who == me else 60)
 	field.crowd.kick(1.0, who)
 	ref_pose = ["point", 2.2]
 	goal_flash = 0.35

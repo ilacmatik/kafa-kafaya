@@ -34,7 +34,8 @@ func _ready() -> void:
 
 
 func start_crowd() -> void:
-	if crowd and not muted:
+	muted = not Game.opt["sfx"]
+	if crowd and Game.opt["crowd"]:
 		crowd.play()
 
 

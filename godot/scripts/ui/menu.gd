@@ -2,12 +2,13 @@
 extends UIScreen
 
 const BIG := ["bot", "online", "cup"]
-const SMALL := ["keys", "exit"]
+const SMALL := ["settings", "exit"]
 const INFO := {
 	"bot": ["BİLGİSAYARA KARŞI", "Bilgisayara karşı tek maç oyna. Zorluğu sen seç.", "bot"],
 	"online": ["ARKADAŞINLA", "Aynı Wi-Fi'de ya da hotspot ile arkadaşına karşı oyna.", "host"],
 	"cup": ["KUPA YOLU", "5 maçlık kupa yolunu tamamla, kupayı kaldır.", "cup"],
 	"keys": ["KONTROLLER", "Tuşlar, özel hareketler ve süper güçler.", "keys"],
+	"settings": ["AYARLAR", "Ses, titreşim, kare hızı, kontroller ve istatistikler.", "keys"],
 	"exit": ["ÇIKIŞ", "Oyundan çık.", "exit"],
 }
 const VERSION := "Godot 2.0 önizleme"
@@ -99,6 +100,9 @@ func _go(name: String) -> void:
 		"keys":
 			play("click")
 			help_open = true
+		"settings":
+			play("click")
+			Game.go("res://scenes/settings.tscn")
 		"exit":
 			get_tree().quit()
 
