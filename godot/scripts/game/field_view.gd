@@ -309,6 +309,9 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 		f = K.BASE_H * p.stats["scale"] / R.pose(p.char, "idle").get_height()
 	var h: float = K.BASE_H * p.stats["scale"]
 	var flip := p.face < 0
+	# geriye kosarken arkasi donuk "ay yuruyusu" olmasin: kostugu yone baksin (sut/kafa aninda yine rakibe doner)
+	if p.on_ground and absf(p.vx) > 40.0 and p.kick_t <= 0.0 and p.slide_t <= 0.0 and p.shoulder_t <= 0.0 and p.frozen <= 0.0:
+		flip = p.vx < 0.0
 	var tilt := 0.0
 	var bob := 0.0
 	var ps: Dictionary = m.pstate[i]
