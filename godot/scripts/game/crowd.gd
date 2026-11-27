@@ -36,6 +36,12 @@ var fan_node := MultiMeshInstance2D.new()
 var mat := ShaderMaterial.new()
 var top_node := Node2D.new()
 var flash_node := Node2D.new()
+var bn_node := Node2D.new()      # boyanan bez (shader)
+var bn_top := Node2D.new()       # portre + isim (boyanmaz)
+var banner_spots: Array = []     # [x, y, tier]
+var banners: Array = []          # [kind, x, y, ph, side, char]
+var teams_c := [0, 1]
+static var _cloth_box := {}      # doku adi -> Rect2 (0..1 normalize)
 
 
 func setup(data_file: String, mask_file: String, light_: float) -> void:
@@ -67,6 +73,23 @@ func setup(data_file: String, mask_file: String, light_: float) -> void:
 		if r.randf() < 0.55:
 			flags.append([r.randf_range(s["x0"] + 30.0, s["x1"] - 30.0), s["y0"] + 20.0, s["col"],
 				r.randf_range(0, 6), sc, 1 if r.randf() < 0.5 else -1])
+	# pankart yerleri: ust sira (tutulan pankart + tabela/flama), alt sira (bayrak)
+	var y0s: Array = []
+	for s2: Dictionary in secs:
+		y0s.append(float(s2["y0"]))
+	y0s.sort()
+	var top_y: float = y0s[0]
+	var low_y: float = top_y + 70.0
+	for yy: float in y0s:
+		if yy > top_y + 50.0:
+			low_y = yy
+			break
+	for x: float in [250.0, 1030.0]:
+		banner_spots.append([x, top_y + 26.0, 0])
+	for x: float in [460.0, 820.0]:
+		banner_spots.append([x, low_y + 30.0, 1])
+	for x: float in [385.0, 895.0]:
+		banner_spots.append([x, top_y + 30.0, 2])
 	# fan y'leri tribun katmanina gore (Python: ry - oy); burada dunya koordinatinda tutuyoruz
 	_build_mesh()
 	mat.shader = load("res://shaders/crowd.gdshader")
@@ -81,6 +104,13 @@ func setup(data_file: String, mask_file: String, light_: float) -> void:
 	add_child(fan_node)
 	add_child(top_node)
 	top_node.draw.connect(_draw_flags)
+	var bm := ShaderMaterial.new()
+	bm.shader = load("res://shaders/banner.gdshader")
+	bn_node.material = bm
+	add_child(bn_node)
+	bn_node.draw.connect(_draw_banners)
+	add_child(bn_top)
+	bn_top.draw.connect(_draw_banner_tops)
 	var am := CanvasItemMaterial.new()
 	am.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	flash_node.material = am
@@ -117,6 +147,20 @@ func set_teams(c0: int, c1: int) -> void:
 		mm.set_instance_custom_data(i, Color(f[0], f[1], floorf(f[8] * 100.0) * 8.0 + f[7], w))
 	for fl: Array in flags:
 		fl[2] = teams[0 if fl[0] < mid else 1]
+	teams_c = [c0, c1]
+	banners.clear()
+	var r := RandomNumberGenerator.new()
+	r.seed = 7
+	var count := [0, 0]
+	for sp: Array in banner_spots:
+		var side := 0 if sp[0] < mid else 1
+		var kind := "bn_hold"
+		if sp[2] == 2:
+			kind = "bn_sign" if side == 0 else "bn_pennant"
+		elif count[side] % 2 == 1:
+			kind = "bn_flag"
+		count[side] += 1
+		banners.append([kind, sp[0], sp[1], r.randf_range(0, 6.28), side, [c0, c1][side]])
 	var sh := PackedColorArray()
 	for tm: String in teams:
 		for k in 3:
@@ -158,6 +202,8 @@ func update(dt: float) -> void:
 	mat.set_shader_parameter("sad", boost_side if boost_t > 0.0 else -1)
 	top_node.queue_redraw()
 	flash_node.queue_redraw()
+	bn_node.queue_redraw()
+	bn_top.queue_redraw()
 
 
 func _draw_flags() -> void:
@@ -195,3 +241,98 @@ func _draw_flags() -> void:
 func _draw_flash() -> void:
 	for f: Array in flash:
 		R.glow(flash_node, Vector2(f[0], f[1] + oy - 10.0), 5.0 + f[2] * 30.0, Color8(255, 255, 235))
+
+
+# ---------------------------------------------------------------- pankartlar
+const BN_H := {"bn_hold": 44.0, "bn_flag": 52.0, "bn_sign": 50.0, "bn_pennant": 50.0}
+
+
+## Bez bolgesinin sinirlari (portre/isim yerlesimi icin), bir kez hesaplanir.
+static func cloth_box(name: String) -> Rect2:
+	if _cloth_box.has(name):
+		return _cloth_box[name]
+	var tx := R.tex(name)
+	var box := Rect2(0.15, 0.15, 0.7, 0.7)
+	if tx:
+		var img := tx.get_image()
+		if img.is_compressed():
+			img.decompress()
+		img.convert(Image.FORMAT_RGBA8)
+		var w := img.get_width() / 4
+		var h := img.get_height() / 4
+		img.resize(w, h, Image.INTERPOLATE_BILINEAR)
+		var x0 := w
+		var x1 := 0
+		var y0 := h
+		var y1 := 0
+		for yy in h:
+			for xx in w:
+				var c := img.get_pixel(xx, yy)
+				var mn := minf(c.r, minf(c.g, c.b))
+				var mx := maxf(c.r, maxf(c.g, c.b))
+				if c.a > 0.3 and mn > 0.6 and mx - mn < 0.16:
+					x0 = mini(x0, xx)
+					x1 = maxi(x1, xx)
+					y0 = mini(y0, yy)
+					y1 = maxi(y1, yy)
+		if x1 > x0 and y1 > y0:
+			box = Rect2(float(x0) / w, float(y0) / h, float(x1 - x0) / w, float(y1 - y0) / h)
+	_cloth_box[name] = box
+	return box
+
+
+func _banner_rect(b: Array) -> Array:
+	var sad := boost_side if boost_t > 0.0 else -1
+	var happy: bool = sad < 0 or sad == b[4]
+	var rate := (0.8 + excite * 1.2) if happy else 0.4
+	var fr := int(t * rate + b[3]) % 2
+	var name := "%s%d.png" % [b[0], fr]
+	var tx := R.tex(name)
+	if tx == null:
+		return []
+	var lift := excite * 3.0 * absf(sin(t * 2.5 + b[3])) if happy else 0.0
+	var h: float = BN_H[b[0]]
+	var w := tx.get_width() * h / tx.get_height()
+	var rect := Rect2(b[1] - w / 2.0, b[2] + 20.0 - lift - h, w, h)
+	return [tx, rect, name]
+
+
+func _draw_banners() -> void:
+	if fill < 1.0:
+		return
+	for b: Array in banners:
+		var d := _banner_rect(b)
+		if d.is_empty():
+			continue
+		var col: Color = TEAM["k%d" % b[5]][0]
+		bn_node.draw_texture_rect(d[0], d[1], false, col)
+
+
+func _draw_banner_tops() -> void:
+	if fill < 1.0:
+		return
+	for b: Array in banners:
+		var d := _banner_rect(b)
+		if d.is_empty():
+			continue
+		var r: Rect2 = d[1]
+		var cb := cloth_box(d[2])
+		var cr := Rect2(r.position + cb.position * r.size, cb.size * r.size)
+		var ch := cr.size.y
+		var dd := ch * 0.62
+		var col: Color = TEAM["k%d" % b[5]][0]
+		var light := col.r + col.g + col.b > 2.2
+		var por := R.portrait(b[5], 96)
+		if b[0] == "bn_hold":
+			var pc := Vector2(cr.position.x + cr.size.x * 0.24, cr.get_center().y)
+			bn_top.draw_texture_rect(por, Rect2(pc - Vector2(dd, dd) / 2.0, Vector2(dd, dd)), false)
+			var nm: String = K.DISPLAY_NAMES[b[5]]
+			var fs := int(maxf(6.0, ch * 0.34))
+			var tw := R.text_width(nm, fs)
+			var maxw := cr.size.x * 0.52
+			if tw > maxw:
+				fs = int(fs * maxw / tw)
+			R.text(bn_top, nm, fs, Vector2(cr.position.x + cr.size.x * 0.66, cr.get_center().y),
+				Color8(25, 30, 50) if light else Color.WHITE, 0)
+		else:
+			bn_top.draw_texture_rect(por, Rect2(cr.get_center() - Vector2(dd, dd) / 2.0, Vector2(dd, dd)), false)
