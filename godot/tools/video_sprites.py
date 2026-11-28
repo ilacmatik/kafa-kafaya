@@ -113,8 +113,12 @@ for n, k in enumerate(sel):
     atlas.paste(im, (px, py))
     rects.append([px, py, w, h])
 atlas.save(f"{out}/atlas.png")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from face import face as _face
+_f = _face(np.array(atlas.crop((rects[0][0], rects[0][1], rects[0][0] + w, rects[0][1] + h))))
 json.dump({"fps": fps, "loop": mode == "loop", "frames": rects, "foot": [round(float(fx), 1), round(float(bot), 1)], "size": [w, h],
-           "top": round(float((rowsu.min() - y0) * sc), 1), "scale": round(sc, 4)},
+           "top": round(float((rowsu.min() - y0) * sc), 1), "scale": round(sc, 4),
+           **({"face": [round(_f[0], 1), round(_f[1], 1)]} if _f else {})},
           open(f"{out}/anim.json", "w"))
 # onizleme seridi
 prev = Image.new("RGBA", (w * min(8, len(sel)), h), (60, 120, 70, 255))
