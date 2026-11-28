@@ -47,8 +47,55 @@ static func world_k(rig: String, name: String, hc: float) -> float:
 	var idle = _m(rig, "idle")
 	if m == null or idle == null:
 		return 1.0
+	return hc / _idle_hc_px(idle) * float(m["scale"]) / float(idle["scale"])
+
+
+## idle karesinde ayak tabani ile yuz merkezi arasi (piksel): gorsel kafa = fizik kafa
+static func _idle_hc_px(idle) -> float:
+	if idle.has("face"):
+		return float(idle["foot"][1]) - float(idle["face"][1])
 	var ih: float = float(idle["foot"][1]) - float(idle["top"])
-	return hc / (ih * (1.0 - HEAD_FRAC)) * float(m["scale"]) / float(idle["scale"])
+	return ih * (1.0 - HEAD_FRAC)
+
+
+## Poz animasyonu (Gemini poz resmi): a ve b pozlari arasinda wb agirlikla gecis.
+## head_anchor: havadaki pozlar yuz merkezinden fizik kafasina hizalanir; degilse ayak tabanindan.
+static func draw_pose(ci: CanvasItem, rig: String, name: String, a: int, b: int, wb: float, feet: Vector2, hc: float,
+		flip: bool, head_anchor: bool, mod: Color = Color.WHITE, sq: Vector2 = Vector2.ONE, rot: float = 0.0) -> void:
+	var m = _m(rig, name)
+	var idle = _m(rig, "idle")
+	if m == null or idle == null:
+		return
+	var k := world_k(rig, name, hc)
+	var tex: Texture2D = _tex[rig + "/" + name]
+	var dir := -1.0 if flip else 1.0
+	# idle'da yuz ayagin ne kadar onunde: havada da ayni yatay iliski korunsun
+	var fdx := 0.0
+	if idle.has("face"):
+		fdx = (float(idle["face"][0]) - float(idle["foot"][0])) * world_k(rig, "idle", hc)
+	for pass_i in 2:
+		var idx := a if pass_i == 0 else b
+		var al := 1.0 if pass_i == 0 else wb
+		if pass_i == 1 and (b == a or wb < 0.02):
+			break
+		var fr: Array = m["frames"][idx]
+		var src := Rect2(fr[0], fr[1], fr[2], fr[3])
+		var anchor: Vector2
+		var at: Vector2
+		if head_anchor:
+			anchor = Vector2(m["heads"][idx][0], m["heads"][idx][1])
+			at = feet + Vector2(fdx * dir, -hc)
+		else:
+			anchor = Vector2(m["feet"][idx][0], m["feet"][idx][1])
+			at = feet
+		ci.draw_set_transform(at, rot, Vector2(k * sq.x * dir, k * sq.y))
+		ci.draw_texture_rect_region(tex, Rect2(-anchor, src.size), src, Color(mod.r, mod.g, mod.b, mod.a * al))
+	ci.draw_set_transform(Vector2.ZERO)
+
+
+static func is_poses(rig: String, name: String) -> bool:
+	var m = _m(rig, name)
+	return m != null and m.get("poses", false)
 
 
 ## Kosu: 1x hizda ayagin zemindeki hizi (dunya birimi/sn). Oynatma hizi = oyuncu hizi / bu -> ayak kaymaz.

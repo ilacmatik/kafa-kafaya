@@ -282,6 +282,66 @@ func _kick_swoosh(p: SimPlayer, h: float) -> void:
 			prev = pt
 
 
+## Poz resimlerinden hareketler (sut, kafa/ziplama, kayma, omuz, rovasata, sevinc, sersemleme).
+## Bir hareket cizildiyse true. Pozlar arasi yumusak gecis; yerdeyken ayaktan, havadayken yuzden (fizik kafasi) hizalanir.
+func _hero_poses(p: SimPlayer, w: SimWorld, i: int, ps: Dictionary, rn: String, hc: float, flip: bool, modr: Color) -> bool:
+	var ft := Vector2(p.x, p.y)
+	var air := not p.on_ground
+	if p.stun > 0.0 and Anim.is_poses(rn, "hurt"):
+		ps["stun_max"] = maxf(float(ps.get("stun_max", 0.0)), p.stun)
+		var u: float = 1.0 - p.stun / maxf(0.05, float(ps["stun_max"]))
+		var sh: float
+		if u < 0.18:
+			sh = 0.0
+		elif u < 0.32:
+			sh = (u - 0.18) / 0.14
+		elif u < 0.8:
+			sh = 1.5 + 0.5 * sin(u * 26.0)    # sendeleme: 1 ile 2 arasi sallanir
+		else:
+			sh = 2.0 + (u - 0.8) / 0.2
+		var ha := mini(int(floor(sh)), 3)
+		Anim.draw_pose(self, rn, "hurt", ha, mini(ha + 1, 3), sh - ha, ft, hc, flip, air, modr)
+		return true
+	ps["stun_max"] = 0.0
+	if p.slide_t > 0.0 and Anim.is_poses(rn, "special"):
+		Anim.draw_pose(self, rn, "special", 0, 0, 0.0, ft, hc, flip, false, modr)
+		return true
+	if p.shoulder_t > 0.0 and Anim.is_poses(rn, "special"):
+		Anim.draw_pose(self, rn, "special", 1, 1, 0.0, ft, hc, flip, air, modr)
+		return true
+	if p.bike_t > 0.0 and Anim.is_poses(rn, "special"):
+		var ub: float = clampf((1.0 - p.bike_t / 0.5) * 2.0, 0.0, 1.0)
+		Anim.draw_pose(self, rn, "special", 2, 3, ub, ft + Vector2(0, -hc * 0.35), hc, flip, false, modr)
+		return true
+	if p.kick_t > 0.0 and Anim.is_poses(rn, "kick"):
+		# 0.24 sn: geri cekis (1) -> vurus (2) -> takip (3) -> toparlanma (4)
+		var uk: float = clampf(1.0 - p.kick_t / 0.24, 0.0, 1.0)
+		var sk: float = 1.0 + 3.0 * uk
+		var ka := mini(int(floor(sk)), 4)
+		Anim.draw_pose(self, rn, "kick", ka, mini(ka + 1, 4), sk - ka, ft, hc, flip, air, modr)
+		return true
+	var celebrate: bool = (w.phase == "goal" and w.scorer == i) or (w.phase == "over" and w.winner == i)
+	if celebrate and not air and Anim.is_poses(rn, "celeb"):
+		var tc: float = float(ps.get("an_t", 0.0)) / 0.42
+		var ca := posmod(int(floor(tc)), 4)
+		var cf: float = clampf((fmod(tc, 1.0) - 0.7) / 0.3, 0.0, 1.0)    # pozda dur, sonra hizli gecis
+		var hop := 18.0 if ca == 1 else 0.0
+		Anim.draw_pose(self, rn, "celeb", ca, (ca + 1) % 4, cf, ft + Vector2(0, -hop * (1.0 - cf)), hc, flip, false, modr)
+		return true
+	if Anim.is_poses(rn, "jump"):
+		if air:
+			# yukselirken 1 (sicrama), tepede 2 (topuk toplu kafa), duserken 3 (inise hazir)
+			var uj: float = clampf(-p.vy / 600.0, -0.35, 0.35)
+			var sj: float = 1.0 + 2.0 * (0.35 - uj) / 0.7
+			var ja := int(floor(sj))
+			Anim.draw_pose(self, rn, "jump", ja, mini(ja + 1, 3), sj - ja, ft, hc, flip, true, modr)
+			return true
+		if float(ps.get("land_t", 0.0)) > 0.0:
+			Anim.draw_pose(self, rn, "jump", 0, 0, 0.0, ft, hc, flip, false, modr)
+			return true
+	return false
+
+
 ## Video animasyonu durumu
 func _anim_state(p: SimPlayer, w: SimWorld, i: int) -> String:
 	var celebrate: bool = (w.phase == "goal" and w.scorer == i) or (w.phase == "over" and w.winner == i)
@@ -367,7 +427,15 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 			if gs > 0.0:
 				rate = clampf(absf(p.vx) / gs, 0.5, 2.2)
 		ps["an_t"] = float(ps.get("an_t", 0.0)) + last_dt * rate
-		if an == "jump" and not Anim.has(rname, "jump") and Anim.air_frame(rname) >= 0:
+		# inis: yere degdikten sonra kisa bir comelme pozu
+		var was_air: bool = ps.get("air", false)
+		ps["air"] = not p.on_ground
+		if was_air and p.on_ground:
+			ps["land_t"] = 0.13
+		ps["land_t"] = maxf(0.0, float(ps.get("land_t", 0.0)) - last_dt)
+		if _hero_poses(p, w, i, ps, rname, hc, flip, modr):
+			pass
+		elif an == "jump" and not Anim.has(rname, "jump") and Anim.air_frame(rname) >= 0:
 			# gecici ziplama: kosu videosunun iki ayagin da havada oldugu karesi + fizik yonlu egim/esneme
 			var up: float = clampf(-p.vy / 600.0, -1.0, 1.0)
 			var jtilt: float = (-0.10 * up if up > 0.0 else 0.12 * -up) * (-1.0 if flip else 1.0)
