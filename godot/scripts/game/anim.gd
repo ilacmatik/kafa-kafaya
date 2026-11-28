@@ -25,6 +25,17 @@ static func _m(rig: String, name: String):
 	return _meta[key]
 
 
+static func fps(rig: String, name: String) -> float:
+	var m = _m(rig, name)
+	return 24.0 if m == null else float(m["fps"])
+
+
+## Kosu videosunda iki ayagin da yerden kesik oldugu kare (yoksa -1)
+static func air_frame(rig: String) -> int:
+	var m = _m(rig, "run")
+	return -1 if m == null or not m.has("air_frame") else int(m["air_frame"])
+
+
 static func length(rig: String, name: String) -> float:
 	var m = _m(rig, name)
 	return 0.0 if m == null else float(m["frames"].size()) / float(m["fps"])

@@ -367,7 +367,13 @@ func _draw_player(i: int, p: SimPlayer, w: SimWorld, t: float) -> void:
 			if gs > 0.0:
 				rate = clampf(absf(p.vx) / gs, 0.5, 2.2)
 		ps["an_t"] = float(ps.get("an_t", 0.0)) + last_dt * rate
-		if Anim.has(rname, an):
+		if an == "jump" and not Anim.has(rname, "jump") and Anim.air_frame(rname) >= 0:
+			# gecici ziplama: kosu videosunun iki ayagin da havada oldugu karesi + fizik yonlu egim/esneme
+			var up: float = clampf(-p.vy / 600.0, -1.0, 1.0)
+			var jtilt: float = (-0.10 * up if up > 0.0 else 0.12 * -up) * (-1.0 if flip else 1.0)
+			var st := Vector2(sx * (1.0 - 0.05 * absf(up)), sy * (1.0 + 0.07 * absf(up)))
+			Anim.draw(self, rname, "run", Anim.air_frame(rname) / Anim.fps(rname, "run"), Vector2(p.x, p.y), hc, flip, modr, st, rrot + jtilt)
+		elif Anim.has(rname, an):
 			Anim.draw(self, rname, an, ps["an_t"] + i * 0.37, Vector2(p.x, p.y), hc, flip, modr, Vector2(sx, sy), rrot)
 		else:
 			Rig.draw(self, p.char, ps["rig"], Vector2(p.x, p.y - bob * 0.3), Rig.fit_h(Rig.rig_of(p.char), hc), flip, modr, Vector2(sx, sy), rrot)
