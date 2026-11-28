@@ -20,10 +20,10 @@ const P_COLORS := [Color8(70, 160, 255), Color8(255, 85, 85)]
 
 var goal_back: Texture2D
 var goal_front: Texture2D
-# ahsap kale gorseli (goal_wood.png 1650x1122): on direk sol kenari x=1405, kiris alti y=215, direk tabani y=1105
+# ahsap kale gorseli (goal_wood.png 1552x1036, inceltilmis): on direk sol kenari x=1405, kiris alti y=129, direk tabani y=1019
 const GW_POST := 1405.0
-const GW_BAR := 215.0
-const GW_FOOT := 1105.0
+const GW_BAR := 129.0
+const GW_FOOT := 1019.0
 var gsx := 0.21
 var gsy := 1.0
 var bg_node := Node2D.new()

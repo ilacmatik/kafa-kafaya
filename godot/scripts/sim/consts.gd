@@ -8,8 +8,8 @@ const H := 720.0
 const GROUND := 652.0
 const GOAL_D := 102.0          # kale cizgisi (on direk ic yuzu) x konumu
 const GOAL_H := 320.0          # kale agzi yuksekligi (oyuncu ~150: ziplayan kafanin ustunden top gecer)
-const ROOF_T := 42.0           # ust direk kalinligi (ahsap kale kirisi)
-const POST_X := 41.0           # on direk dis yuzu: kale cizgisinden sahaya dogru
+const ROOF_T := 30.0           # ust direk kalinligi (inceltilmis ahsap kiris)
+const POST_X := 23.0           # on direk dis yuzu: kale cizgisinden sahaya dogru
 const GOAL_TOP := GROUND - GOAL_H
 
 const BALL_R := 20.0
@@ -29,7 +29,7 @@ const PEN_SHOT_T := 1.5
 
 const PU_KINDS := ["speed", "jump", "shield", "freeze", "gold"]
 
-const SIZE := 0.95
+const SIZE := 1.05
 const BASE_H := 160.0 * SIZE
 const JUMP_K := 0.88
 
